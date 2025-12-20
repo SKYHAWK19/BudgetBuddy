@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - BudgetBuddy</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Sharp" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .settings-container { max-width: 600px; margin: 0 auto; }
+        .settings-card { background: var(--card-bg); padding: 2rem; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        .form-group { margin-bottom: 1.5rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; color: var(--text-color); font-weight: bold; }
+        .form-group input { width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ccc; background: var(--bg-color); color: var(--text-color); }
+        
+        /* --- AVATAR EDIT --- */
+        .avatar-wrapper { position: relative; display: inline-block; margin-bottom: 1rem; }
+        .preview-img { width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 3px solid var(--accent-color); }
+        .edit-overlay {
+            position: absolute; bottom: 5px; right: 5px;
+            background: var(--accent-color); color: white;
+            border-radius: 50%; width: 30px; height: 30px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        /* --- MODALS (POPUPS) --- */
+        .modal {
+            display: none; position: fixed; z-index: 1000; left: 0; top: 0;
+            width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);
+            align-items: center; justify-content: center;
+        }
+        .modal-content {
+            background: var(--card-bg); padding: 20px; border-radius: 10px;
+            width: 90%; max-width: 400px; text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .avatar-options { display: flex; justify-content: space-around; margin: 20px 0; }
+        .avatar-option { width: 60px; height: 60px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+        .avatar-option:hover { border-color: var(--accent-color); transform: scale(1.1); }
+
+        .btn-save { background: var(--accent-color); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 10px; }
+        .btn-outline { background: transparent; border: 1px solid var(--accent-color); color: var(--text-color); margin-top: 10px; padding: 10px; width: 100%; border-radius: 5px; cursor: pointer; }
+        
+        /* --- MOBILE DRAWER ANIMATION --- */
+        @media (max-width: 768px) {
+            .sidebar { 
+                display: block !important; 
+                position: fixed; top: 0; left: -100%; 
+                height: 100vh; width: 260px; z-index: 1001; 
+                background: var(--card-bg); transition: left 0.4s ease; 
+                box-shadow: 5px 0 15px rgba(0,0,0,0.1);
+            }
+            .sidebar.active { left: 0; transform: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="modal-overlay" id="overlay"></div>
+
+    <div class="dashboard-body">
+        
+        <aside class="sidebar" id="sidebar">
+            <div class="profile-section">
+                <span class="material-icons-sharp" id="closeSidebarBtn" style="display:none; float:right; cursor:pointer; margin: 10px;">close</span>
+                <br>
+                <img src="{{ user.picture }}" class="avatar" alt="Profile">
+                <h2>{{ user.given_name }}</h2>
+            </div>
+            <ul class="nav-links">
+                <li><a href="{{ url_for('dashboard') }}"><i class="material-icons-sharp">grid_view</i> Dashboard</a></li>
+                <li><a href="{{ url_for('reports') }}"><i class="material-icons-sharp">insights</i> Reports</a></li>
+                <li class="active"><a href="#"><i class="material-icons-sharp">settings</i> Settings</a></li>
+                <li><a href="#" onclick="toggleSupport()"><i class="material-icons-sharp">support_agent</i> Support</a>
+                    <div id="support-details" style="display: none; padding-left: 1.5rem; font-size: 0.85rem;">
+                        <p>📞 +91 98765 43210</p><p>✉️ help@budget.com</p>
+                    </div>
+                </li>
+                <li style="margin-top: auto;"><a href="{{ url_for('logout') }}" style="color: var(--danger);"><i class="material-icons-sharp">logout</i> Logout</a></li>
+            </ul>
+        </aside>
+
+        <div class="main-content">
+            <div class="top-navbar">
+                <button class="menu-btn" id="menuBtn"><span class="material-icons-sharp">menu</span></button>
+                <h2>Profile Settings</h2>
+                <button class="theme-toggle-dash" id="themeBtn">🌙</button>
+            </div>
+
+            <div class="settings-container">
+                <div class="settings-card">
+                    
+                    <form action="{{ url_for('update_settings') }}" method="POST">
+                        
+                        <div style="text-align: center;">
+                            <div class="avatar-wrapper">
+                                <img src="{{ user.picture }}" class="preview-img" id="mainPreview" alt="Profile">
+                                <div class="edit-overlay" onclick="openAvatarModal()">
+                                    <span class="material-icons-sharp" style="font-size: 1.2rem;">edit</span>
+                                </div>
+                            </div>
+                            <input type="hidden" name="profile_pic" id="profilePicInput" value="{{ user.picture }}">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Display Name</label>
+                            <input type="text" name="name" value="{{ user.name }}" required>
+                        </div>
+
+                        {% if not is_google_user %}
+                        <div class="form-group">
+                            <label>Password</label>
+                            <button type="button" class="btn-outline" onclick="openPasswordModal()">Change Password</button>
+                        </div>
+                        {% endif %}
+
+                        <button type="submit" class="btn-save">Save Profile Info</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="avatarModal" class="modal">
+        <div class="modal-content">
+            <h3>Choose Avatar</h3>
+            <div class="avatar-options">
+                <img src="https://cdn-icons-png.flaticon.com/512/4140/4140048.png" class="avatar-option" onclick="selectAvatar(this.src)">
+                <img src="https://cdn-icons-png.flaticon.com/512/4140/4140037.png" class="avatar-option" onclick="selectAvatar(this.src)">
+                <img src="https://cdn-icons-png.flaticon.com/512/4140/4140047.png" class="avatar-option" onclick="selectAvatar(this.src)">
+            </div>
+            <button class="btn-outline" onclick="closeModals()">Cancel</button>
+        </div>
+    </div>
+
+    <div id="passwordModal" class="modal">
+        <div class="modal-content">
+            <h3>Change Password</h3>
+            <div class="form-group" style="text-align: left;">
+                <label>Current Password</label>
+                <input type="password" id="popupOldPass">
+            </div>
+            <div class="form-group" style="text-align: left;">
+                <label>New Password</label>
+                <input type="password" id="popupNewPass">
+            </div>
+            <button class="btn-save" onclick="savePasswordChange()">Update Password</button>
+            <button class="btn-outline" onclick="closeModals()">Cancel</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    
+    <script>
+        // --- ONLY MODAL LOGIC HERE ---
+        const avatarModal = document.getElementById('avatarModal');
+        const passModal = document.getElementById('passwordModal');
+
+        // Avatar Functions
+        function openAvatarModal() { avatarModal.style.display = 'flex'; }
+        function selectAvatar(url) {
+            document.getElementById('mainPreview').src = url;
+            document.getElementById('profilePicInput').value = url;
+            closeModals();
+        }
+
+        // Password Functions
+        function openPasswordModal() { 
+            if(passModal) {
+                // Clear fields when opening
+                document.getElementById('popupOldPass').value = '';
+                document.getElementById('popupNewPass').value = '';
+                passModal.style.display = 'flex'; 
+            }
+        }
+
+        // --- NEW: Handle Password Change via AJAX ---
+        function savePasswordChange() {
+            const oldP = document.getElementById('popupOldPass').value;
+            const newP = document.getElementById('popupNewPass').value;
+            
+            if(!oldP || !newP) { alert("Please fill both fields"); return; }
+            
+            // Send data to backend
+            fetch("{{ url_for('change_password') }}", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ old_password: oldP, new_password: newP })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message); // Success Popup
+                    closeModals();
+                } else {
+                    alert(data.message); // Error Popup (Wrong Old Password)
+                }
+            })
+            .catch(error => {
+                console.error("Error:", error);
+                alert("Something went wrong. Please try again.");
+            });
+        }
+
+        function closeModals() {
+            if(avatarModal) avatarModal.style.display = 'none';
+            if(passModal) passModal.style.display = 'none';
+        }
+
+        function toggleSupport() {
+            const d = document.getElementById('support-details');
+            if(d) d.style.display = (d.style.display === "none") ? "block" : "none";
+        }
+    </script>
+</body>
+</html>

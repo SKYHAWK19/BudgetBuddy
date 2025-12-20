@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reports - BudgetBuddy</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Sharp" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* --- REPORT LAYOUT --- */
+        .report-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .report-controls input { padding: 8px 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 1rem; background: var(--card-bg); color: var(--text-color); cursor: pointer; }
+        .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 2rem; }
+        .chart-container { background: var(--card-bg); padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 2rem; height: 300px; position: relative; }
+
+        /* --- FILTERS --- */
+        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .filter-btn { background: var(--card-bg); border: 1px solid var(--text-color); color: var(--text-color); padding: 5px 15px; border-radius: 20px; cursor: pointer; font-size: 0.9rem; display: flex; align-items: center; gap: 5px; transition: 0.3s; opacity: 0.7; }
+        .filter-btn:hover { opacity: 1; background: var(--bg-color); }
+        .filter-btn.active { background: var(--accent-color); color: white; border-color: var(--accent-color); opacity: 1; }
+        .filter-drawer { display: none; background: var(--card-bg); padding: 15px; border-radius: 10px; margin-bottom: 20px; gap: 10px; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.05); animation: slideDown 0.3s ease forwards; }
+        .filter-drawer.open { display: flex; }
+        .filter-select { padding: 8px; border-radius: 5px; border: 1px solid #ddd; background: var(--bg-color); color: var(--text-color); flex-grow: 1; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* --- RESPONSIVE DRAWER ANIMATION --- */
+        @media (max-width: 768px) {
+            .summary-grid { grid-template-columns: 1fr; }
+            .filter-drawer { flex-direction: column; align-items: stretch; }
+            .transactions { overflow-x: auto; }
+            .report-header h3 { font-size: 1.1rem; }
+
+            /* Smooth Sidebar Logic */
+            .sidebar {
+                display: block !important; /* Override default hidden state */
+                position: fixed;
+                top: 0;
+                left: -100%; /* Start Hidden to the left */
+                height: 100vh;
+                width: 260px;
+                z-index: 999;
+                background: var(--card-bg);
+                box-shadow: 5px 0 15px rgba(0,0,0,0.1);
+                transition: left 0.4s ease; /* The Smooth Effect */
+            }
+            .sidebar.active {
+                left: 0; /* Slide In */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-body">
+        
+        <aside class="sidebar" id="sidebar">
+            <div class="profile-section">
+                <br>
+                <img src="{{ user.picture }}" class="avatar" alt="Profile">
+                <h2>{{ user.given_name }}</h2>
+            </div>
+            <ul class="nav-links">
+                <li><a href="{{ url_for('dashboard') }}"><i class="material-icons-sharp">grid_view</i> Dashboard</a></li>
+                <li class="active"><a href="#"><i class="material-icons-sharp">insights</i> Reports</a></li>
+                <li><a href="{{ url_for('settings') }}"><i class="material-icons-sharp">settings</i> Settings</a></li>
+                <li>
+                    <a href="#" onclick="toggleSupport()">
+                        <i class="material-icons-sharp">support_agent</i> Support
+                    </a>
+                    <div id="support-details" style="display: none; padding-left: 1.5rem; font-size: 0.85rem; padding-bottom: 10px; opacity: 0.8;">
+                        <p style="margin-top: 5px;">📞 +91 98765 43210</p>
+                        <p style="margin-top: 5px;">✉️ help@budget.com</p>
+                    </div>
+                </li>
+                <li style="margin-top: auto;">
+                    <a href="{{ url_for('logout') }}" style="color: var(--danger);">
+                        <i class="material-icons-sharp">logout</i> Logout
+                    </a>
+                </li>
+            </ul>
+        </aside>
+
+        <div class="main-content">
+            <div class="top-navbar">
+                <button class="menu-btn" id="menuBtn"><span class="material-icons-sharp">menu</span></button>
+                <h2>Monthly Report</h2>
+                <button class="theme-toggle-dash" id="themeBtn">🌙</button>
+            </div>
+
+            <div class="report-header">
+                <h3>Viewing Report For:</h3>
+                <form action="{{ url_for('reports') }}" method="GET" class="report-controls">
+                    <input type="month" name="month" value="{{ r.selected_month }}" onchange="this.form.submit()">
+                </form>
+            </div>
+
+            <div class="summary-grid">
+                <div class="card balance-card">
+                    <h3>Total Spent</h3>
+                    <div class="amount">₹{{ r.total }}</div>
+                    <small>in {{ r.selected_month }}</small>
+                </div>
+                <div class="card">
+                    <h3>Avg. Daily Spend</h3>
+                    <div class="amount">₹{{ r.average }}</div>
+                    <small class="text-muted">per day</small>
+                </div>
+            </div>
+
+            <h3>Where did money go?</h3>
+            <div class="chart-container">
+                <canvas id="categoryChart"></canvas>
+            </div>
+
+            <div class="history-header">
+                <h3>Transaction History</h3>
+                <button class="filter-btn" onclick="toggleFilterDrawer()">
+                    <span class="material-icons-sharp" style="font-size: 1.2rem;">filter_list</span> Filter By
+                </button>
+            </div>
+
+            <div class="filter-drawer" id="filterDrawer">
+                <select id="catFilter" class="filter-select" onchange="applyFilters()">
+                    <option value="all">All Categories</option>
+                    <option value="Food">Food</option>
+                    <option value="Travel">Travel</option>
+                    <option value="Fun">Fun</option>
+                    <option value="Books">Books</option>
+                    <option value="Other">Other</option>
+                </select>
+                <input type="date" id="dayFilter" class="filter-select" onchange="applyFilters()">
+                <button onclick="resetFilters()" style="padding: 8px 15px; border:none; background:var(--danger); color:white; border-radius:5px; cursor:pointer;">Reset</button>
+            </div>
+
+            <div id="transactionsList">
+                {% if r.daily_grouped %}
+                    {% for date, entries in r.daily_grouped %}
+                    <div class="daily-group" data-date="{{ date }}">
+                        <div class="daily-header">{{ date }}</div>
+                        <div class="card transactions">
+                            <table>
+                                <tbody>
+                                    {% for t in entries %}
+                                    <tr class="tx-row" data-category="{{ t.category }}">
+                                        <td>{{ t.category }}</td>
+                                        <td>{{ t.description }}</td>
+                                        <td class="expense">-₹{{ t.amount }}</td>
+                                        <td style="font-size: 0.8rem; opacity: 0.6;">{{ t.date }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p style="text-align: center; opacity: 0.5; margin-top: 20px;">No expenses found for this month! 🎉</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    
+    <script>
+        // --- 1. FILTER UI ---
+        function toggleFilterDrawer() {
+            const drawer = document.getElementById('filterDrawer');
+            const btn = document.querySelector('.filter-btn');
+            if (drawer.classList.contains('open')) {
+                drawer.classList.remove('open'); btn.classList.remove('active');
+            } else {
+                drawer.classList.add('open'); btn.classList.add('active');
+            }
+        }
+
+        function applyFilters() {
+            const cat = document.getElementById('catFilter').value;
+            const day = document.getElementById('dayFilter').value;
+            
+            document.querySelectorAll('.daily-group').forEach(group => {
+                const groupDate = group.getAttribute('data-date');
+                const rows = group.querySelectorAll('.tx-row');
+                let hasVisibleRows = false;
+                let dateMatch = (day === "") || (groupDate === day);
+
+                if (!dateMatch) { group.style.display = 'none'; return; }
+
+                rows.forEach(row => {
+                    const rowCat = row.getAttribute('data-category');
+                    let catMatch = (cat === 'all') || (rowCat === cat);
+                    if (catMatch) { row.style.display = ''; hasVisibleRows = true; } 
+                    else { row.style.display = 'none'; }
+                });
+                group.style.display = hasVisibleRows ? '' : 'none';
+            });
+        }
+
+        function resetFilters() {
+            document.getElementById('catFilter').value = 'all';
+            document.getElementById('dayFilter').value = '';
+            applyFilters(); toggleFilterDrawer();
+        }
+
+        function toggleSupport() {
+            const d = document.getElementById('support-details');
+            d.style.display = (d.style.display === "none") ? "block" : "none";
+        }
+
+        // --- 2. CHART ---
+        const ctx = document.getElementById('categoryChart');
+        const isDark = document.body.classList.contains('dark-mode');
+        const textColor = isDark ? '#ffffff' : '#2d3436';
+        const gridColor = isDark ? '#333' : '#ddd';
+
+        let myCategoryChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: {{ r.categories | tojson }},
+                datasets: [{ label: 'Spent (₹)', data: {{ r.cat_values | tojson }}, backgroundColor: '#8e44ad', borderRadius: 5 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor } },
+                    x: { grid: { display: false }, ticks: { color: textColor } }
+                }, plugins: { legend: { display: false } }
+            }
+        });
+
+        window.updateChartColors = function(isDark) {
+            const newText = isDark ? '#ffffff' : '#2d3436';
+            const newGrid = isDark ? '#333' : '#ddd';
+            myCategoryChart.options.scales.y.grid.color = newGrid;
+            myCategoryChart.options.scales.y.ticks.color = newText;
+            myCategoryChart.options.scales.x.ticks.color = newText;
+            myCategoryChart.update();
+        };
+
+        // --- 3. SMOOTH SIDEBAR (UPDATED) ---
+        const sideMenu = document.getElementById('sidebar');
+        const menuBtn = document.getElementById('menuBtn');
+
+        if(menuBtn) {
+            menuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // Toggle the class 'active' instead of display block
+                sideMenu.classList.add('active');
+            });
+        }
+
+        document.addEventListener('click', (e) => {
+            const isMobileMode = window.getComputedStyle(menuBtn).display !== 'none';
+            
+            // Check if the sidebar has the active class
+            if (isMobileMode && sideMenu.classList.contains('active')) {
+                if (!sideMenu.contains(e.target) && !menuBtn.contains(e.target)) {
+                    sideMenu.classList.remove('active');
+                }
+            }
+        });
+    </script>
+</body>
+</html>

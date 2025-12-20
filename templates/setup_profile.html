@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finish Setup</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="centered-layout">
+
+    <button class="theme-toggle" id="themeBtn">🌙</button>
+
+    <div class="login-card" style="width: 400px; text-align: left;">
+        <h2 style="text-align: center; color: var(--accent-color);">Welcome to the Family! 🚀</h2>
+        <p style="text-align: center; opacity: 0.7; margin-bottom: 20px;">Let's set up your profile.</p>
+
+        <form action="/save_profile" method="POST">
+            <input type="hidden" name="email" value="{{ email }}">
+            <label style="font-weight: bold;">Full Name</label>
+            <input type="text" name="name" value="{{ name }}" required>
+            <label style="font-weight: bold;">Create a Password</label>
+            <input type="password" name="password" placeholder="Min. 6 characters" required minlength="6">
+            <button type="submit" class="login-btn" style="margin-top: 15px;">Save & Enter Dashboard</button>
+        </form>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

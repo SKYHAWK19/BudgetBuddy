@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - BudgetBuddy</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Sharp" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* --- LAYOUT GRID --- */
+        .bottom-section {
+            display: grid;
+            grid-template-columns: 2fr 1fr; /* Chart = 2 parts, Clock = 1 part */
+            gap: 20px;
+            margin-top: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        /* Responsive Breakpoint for Bottom Section */
+        @media (max-width: 1000px) {
+            .bottom-section { grid-template-columns: 1fr; } /* Stack on tablet/mobile */
+        }
+
+        /* --- CLOCK STYLES --- */
+        .clock-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            min-height: 350px; 
+            height: 100%;
+        }
+        body.dark-mode .clock-card { border: 1px solid rgba(255,255,255,0.1); }
+
+        .clock-time { font-size: 3rem; font-weight: bold; color: var(--accent-color); margin: 10px 0; }
+        .clock-day { font-size: 1.5rem; font-weight: 600; color: var(--text-color); }
+        .clock-date { font-size: 1rem; opacity: 0.7; margin-bottom: 20px; }
+        
+        /* --- CHART CONTROLS --- */
+        .chart-controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .toggle-group { background: rgba(0,0,0,0.05); padding: 5px; border-radius: 10px; display: flex; gap: 5px; }
+        body.dark-mode .toggle-group { background: rgba(255,255,255,0.1); }
+        
+        .t-btn {
+            border: none; background: transparent; padding: 5px 15px; 
+            border-radius: 8px; cursor: pointer; font-weight: bold; color: var(--text-color);
+        }
+        .t-btn.active { background: var(--accent-color); color: white; }
+
+        /* --- LOCATION SELECTOR --- */
+        .location-select {
+            padding: 5px 10px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            background: var(--bg-color);
+            color: var(--text-color);
+            cursor: pointer;
+            margin-right: 10px;
+            max-width: 150px; /* Limit width */
+        }
+    </style>
+</head>
+<body>
+
+    <div class="modal-overlay" id="overlay"></div>
+
+    <div class="dashboard-body">
+        
+        <aside class="sidebar" id="sidebar">
+            <div class="profile-section">
+                <span class="material-icons-sharp" id="closeSidebarBtn" style="display:none; float:right; cursor:pointer;">close</span>
+                <br>
+                <img src="{{ user.picture }}" class="avatar" alt="Profile">
+                <h2>{{ user.given_name }}</h2>
+                <p style="opacity: 0.7;">BudgetBuddy User</p>
+            </div>
+
+            <ul class="nav-links">
+                <li class="active"><a href="#"><i class="material-icons-sharp">grid_view</i> Dashboard</a></li>
+                <li><a href="{{ url_for('reports') }}"><i class="material-icons-sharp">insights</i> Reports</a></li>
+                
+                <li><a href="{{ url_for('settings') }}"><i class="material-icons-sharp">settings</i> Settings</a></li>
+                
+                <li>
+                    <a href="#" onclick="toggleSupport()">
+                        <i class="material-icons-sharp">support_agent</i> Support
+                    </a>
+                    <div id="support-details" style="display: none; padding-left: 1.5rem; font-size: 0.85rem; padding-bottom: 10px; opacity: 0.8;">
+                        <p style="margin-top: 5px;">📞 +91 98765 43210</p>
+                        <p style="margin-top: 5px;">✉️ help@budget.com</p>
+                    </div>
+                </li>
+                <li style="margin-top: auto;">
+                    <a href="{{ url_for('logout') }}" style="color: var(--danger);">
+                        <i class="material-icons-sharp">logout</i> Logout
+                    </a>
+                </li>
+            </ul>
+        </aside>
+
+        <div class="main-content">
+            
+            <div class="top-navbar">
+                <button class="menu-btn" id="menuBtn"><span class="material-icons-sharp">menu</span></button>
+                <h2>Overview</h2>
+                
+                <div style="display: flex; align-items: center;">
+                    <select id="locationSelect" class="location-select" onchange="updateClock()">
+                        <option value="Asia/Kolkata">🇮🇳 IST</option>
+                        <option value="America/New_York">🇺🇸 EST</option>
+                        <option value="Europe/London">🇬🇧 GMT</option>
+                        <option value="Asia/Tokyo">🇯🇵 JST</option>
+                        <option value="Australia/Sydney">🇦🇺 AEDT</option>
+                        <option value="Asia/Dubai">🇦🇪 GST</option>
+                    </select>
+                    <button class="theme-toggle-dash" id="themeBtn">🌙</button>
+                </div>
+            </div>
+
+            <div class="cards-grid">
+                
+                <div class="card balance-card" style="display: flex; flex-direction: row; justify-content: space-between; align-items: flex-start;">
+                    
+                    <div>
+                        <h3>Total Balance</h3>
+                        <div class="amount" style="margin-top: 10px; margin-bottom: 5px;">{{ data.currency }}{{ data.balance }}</div>
+                        <small>Monthly Budget: {{ data.currency }}{{ data.budget }}</small>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 15px;">
+                        
+                        <button onclick="openBudgetModal()" style="background:none; border:none; color:white; cursor:pointer; padding: 0;" title="Edit Budget Limit">
+                            <span class="material-icons-sharp">edit</span>
+                        </button>
+
+                        <div style="display: flex; gap: 10px;">
+                            <button onclick="quickUpdateBudget('add')" style="background:none; border:none; color:white; cursor:pointer; padding: 0;" title="Add to Budget">
+                                <span class="material-icons-sharp" style="font-weight: bold;">add</span>
+                            </button>
+                            <button onclick="quickUpdateBudget('sub')" style="background:none; border:none; color:white; cursor:pointer; padding: 0;" title="Subtract from Budget">
+                                <span class="material-icons-sharp" style="font-weight: bold;">remove</span>
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Safe Daily Limit</h3>
+                    <div class="amount">{{ data.currency }}{{ data.daily_limit }}</div>
+                    <small class="text-muted">To last until month end</small>
+                </div>
+                <div class="card">
+                    <h3>Spent Today</h3>
+                    <div class="amount" style="color: var(--danger);">{{ data.currency }}{{ data.spent_today }}</div>
+                </div>
+            </div>
+
+            <div class="recent-orders" style="margin-top: 2rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+                    <h2>Recent Activity</h2>
+                    <button class="add-money-btn" onclick="openModal()" style="background: var(--accent-color); color: white; border: none; padding: 10px 20px;">+ Add Expense</button>
+                </div>
+                <div class="card transactions">
+                    <table>
+                        <thead><tr><th>Category</th><th>Description</th><th>Amount</th></tr></thead>
+                        <tbody>
+                            {% for t in transactions %}
+                            <tr>
+                                <td>{{ t.category }}</td>
+                                <td>{{ t.description }}</td>
+                                <td class="expense" style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span>-{{ data.currency }}{{ t.amount }}</span>
+                                    
+                                    <span class="material-icons-sharp" 
+                                          style="font-size: 18px; cursor: pointer; color: var(--text-color); opacity: 0.5;"
+                                          onclick="openEditTransaction('{{ t.entry_id }}', '{{ t.description }}', '{{ t.amount }}')"
+                                          title="Edit Entry">
+                                          edit
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="bottom-section">
+                
+                <div class="sales-analytics">
+                    <h2>Spending Analysis</h2>
+                    <div class="card chart-card-wide" style="height: 100%;">
+                        <div class="chart-controls">
+                            <input type="month" id="datePicker" class="date-input" onchange="updateChart()" 
+                                   style="padding: 5px; border-radius: 5px; border: 1px solid #ccc; background: var(--bg-color); color: var(--text-color);">
+                            
+                            <div class="toggle-group">
+                                <button class="t-btn active" id="btnMonthly" onclick="setMode('monthly')">Monthly</button>
+                                <button class="t-btn" id="btnDaily" onclick="setMode('daily')">Daily</button>
+                            </div>
+                        </div>
+                        <div style="height: 250px; position: relative;">
+                            <canvas id="myChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h2>Time & Date</h2>
+                    <div class="clock-card">
+                        <span class="material-icons-sharp" style="font-size: 3rem; color: var(--accent-color);">schedule</span>
+                        <div class="clock-time" id="clockTime">00:00:00</div>
+                        <div class="clock-day" id="clockDay">Monday</div>
+                        <div class="clock-date" id="clockDate">January 1, 2025</div>
+                    </div>
+                </div>
+
+            </div>
+        </div> 
+    </div> 
+
+    <div id="expenseModal" class="modal-overlay">
+        <div class="login-card">
+            <span class="close-btn" onclick="closeModal('expenseModal')">&times;</span>
+            <h2>Add Expense</h2>
+            <form action="{{ url_for('add_expense') }}" method="POST">
+                <label>Category</label>
+                <select name="category" required style="width:100%; padding:10px; margin:10px 0; border-radius:5px;">
+                    <option value="Food">🍔 Food</option>
+                    <option value="Travel">🚕 Travel</option>
+                    <option value="Fun">🎉 Fun</option>
+                    <option value="Books">📚 Books</option>
+                    <option value="Other">⚡ Other</option>
+                </select>
+                <input type="text" name="description" placeholder="Description" required>
+                <input type="number" name="amount" placeholder="Amount" required>
+                <button type="submit" class="login-btn">Save</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="budgetModal" class="modal-overlay">
+        <div class="login-card">
+            <span class="close-btn" onclick="closeModal('budgetModal')">&times;</span>
+            <h2>Update Budget</h2>
+            <form action="{{ url_for('update_budget') }}" method="POST">
+                <input type="number" name="budget" value="{{ data.budget }}" required>
+                <button type="submit" class="login-btn">Update</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="incBudgetModal" class="modal-overlay">
+        <div class="login-card" style="text-align: center;">
+            <span class="close-btn" onclick="closeModal('incBudgetModal')">&times;</span>
+            <div id="incEmoji" style="font-size: 4rem; margin-bottom: 10px;"></div>
+            <h2 id="incTitle" style="margin-bottom: 20px;"></h2>
+            <form action="{{ url_for('update_budget_incremental') }}" method="POST">
+                <input type="hidden" id="incAction" name="action">
+                <input type="number" name="amount" placeholder="Enter Amount" required style="text-align: center; font-size: 1.2rem; width: 100%; margin-bottom: 15px; padding: 10px; border-radius: 5px; border: 1px solid #ccc;">
+                <button type="submit" class="login-btn" style="margin-top: 5px;">Confirm Update</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="editTransactionModal" class="modal-overlay">
+        <div class="login-card">
+            <span class="close-btn" onclick="closeModal('editTransactionModal')">&times;</span>
+            <h2>Edit Transaction</h2>
+            <form action="{{ url_for('edit_transaction') }}" method="POST">
+                <input type="hidden" id="edit_id" name="id">
+                <label>Description</label>
+                <input type="text" id="edit_desc" name="description" required>
+                <label>Amount</label>
+                <input type="number" id="edit_amount" name="amount" required>
+                <button type="submit" class="login-btn">Update Entry</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        // --- 1. SMART CLOCK LOGIC ---
+        let currentDayStr = new Date().toDateString();
+
+        function updateClock() {
+            const now = new Date();
+            if (now.toDateString() !== currentDayStr) { location.reload(); }
+            const timeZone = document.getElementById('locationSelect').value;
+            const timeOptions = { timeZone: timeZone, hour12: true, hour: 'numeric', minute: '2-digit', second: '2-digit' };
+            const dayOptions = { timeZone: timeZone, weekday: 'long' };
+            const dateOptions = { timeZone: timeZone, year: 'numeric', month: 'long', day: 'numeric' };
+
+            document.getElementById('clockTime').innerText = now.toLocaleTimeString('en-US', timeOptions);
+            document.getElementById('clockDay').innerText = new Intl.DateTimeFormat('en-US', dayOptions).format(now);
+            document.getElementById('clockDate').innerText = new Intl.DateTimeFormat('en-US', dateOptions).format(now);
+        }
+        setInterval(updateClock, 1000);
+        updateClock(); 
+
+        // --- 2. MODAL & UI HELPERS ---
+        function openModal() { document.getElementById("expenseModal").classList.add("active"); }
+        function openBudgetModal() { document.getElementById("budgetModal").classList.add("active"); }
+        function closeModal(id) { document.getElementById(id).classList.remove("active"); }
+        function toggleSupport() {
+            const d = document.getElementById('support-details');
+            d.style.display = (d.style.display === "none") ? "block" : "none";
+        }
+
+        // --- 3. DRAMATIC BUDGET MODAL LOGIC ---
+        function quickUpdateBudget(action) {
+            document.getElementById('incAction').value = action;
+            const emojiDiv = document.getElementById('incEmoji');
+            const titleH2 = document.getElementById('incTitle');
+            if (action === 'add') {
+                emojiDiv.innerText = "🤑"; 
+                titleH2.innerText = "Increase Budget";
+            } else {
+                emojiDiv.innerText = "😢"; 
+                titleH2.innerText = "Decrease Budget";
+            }
+            document.getElementById('incBudgetModal').classList.add('active');
+        }
+
+        // --- 4. EDIT TRANSACTION LOGIC ---
+        function openEditTransaction(id, desc, amount) {
+            document.getElementById('edit_id').value = id;
+            document.getElementById('edit_desc').value = desc;
+            document.getElementById('edit_amount').value = amount;
+            document.getElementById('editTransactionModal').classList.add("active");
+        }
+
+        // --- 5. CHART & TOGGLE LOGIC ---
+        const ctx = document.getElementById('myChart');
+        let chartMode = 'monthly';
+        const datePicker = document.getElementById('datePicker');
+        
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0'); 
+        const dd = String(today.getDate()).padStart(2, '0');
+        datePicker.value = `${yyyy}-${mm}`;
+
+        const initialData = JSON.parse('{{ data.chart_data | tojson }}');
+        let isDark = document.body.classList.contains('dark-mode');
+        let textColor = isDark ? '#ffffff' : '#2d3436';
+
+        let myChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Food', 'Travel', 'Books', 'Fun', 'Other'],
+                datasets: [{
+                    data: initialData,
+                    backgroundColor: ['#ff7675', '#fdcb6e', '#0984e3', '#00b894', '#636e72'],
+                    borderWidth: 0
+                }]
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'right', labels: { color: textColor } } } 
+            }
+        });
+
+        function setMode(mode) {
+            chartMode = mode;
+            document.getElementById('btnMonthly').className = mode === 'monthly' ? 't-btn active' : 't-btn';
+            document.getElementById('btnDaily').className = mode === 'daily' ? 't-btn active' : 't-btn';
+            if (mode === 'daily') {
+                datePicker.type = 'date';
+                datePicker.value = `${yyyy}-${mm}-${dd}`;
+            } else {
+                datePicker.type = 'month';
+                datePicker.value = `${yyyy}-${mm}`;
+            }
+            updateChart();
+        }
+
+        function updateChart() {
+            let dateStr = datePicker.value;
+            fetch(`/api/chart-data?date=${dateStr}`)
+                .then(response => response.json())
+                .then(data => {
+                    myChart.data.datasets[0].data = data.chart;
+                    myChart.update();
+                });
+        }
+
+        document.getElementById('themeBtn').addEventListener('click', () => {
+            setTimeout(() => {
+                let isDark = document.body.classList.contains('dark-mode');
+                let newColor = isDark ? '#ffffff' : '#2d3436';
+                myChart.options.plugins.legend.labels.color = newColor;
+                myChart.update();
+            }, 100);
+        });
+    </script>
+</body>
+</html>

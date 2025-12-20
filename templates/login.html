@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BudgetBuddy Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <ul class="money-bg">
+        <li>₹</li> <li>$</li> <li>₹</li> <li>$</li> <li>₹</li>
+    </ul>
+
+    <button class="theme-toggle" id="themeBtn">🌙</button>
+
+    <div class="hero-text">
+        <h1>BudgetBuddy 💸</h1>
+        <p>Stop wondering where your money went.</p>
+    </div>
+
+    <div class="action-buttons">
+        <button id="btnSignup" class="float-btn">Signup</button>
+        <button id="btnLogin" class="float-btn">Login</button>
+    </div>
+    <div class="modal-overlay" id="modalSignup">
+        <div class="login-card">
+            <span class="close-btn" onclick="closeModal('modalSignup')">&times;</span>
+            <h2>Create Account</h2>
+            
+            <a href="/login/google" style="display:block; background:white; border:1px solid #ddd; padding:10px; border-radius:8px; text-decoration:none; color:#333; margin-bottom:15px;">
+                <img src="https://img.icons8.com/color/48/google-logo.png" width="20" style="vertical-align:middle;"> Sign up with Google
+            </a>
+            <div style="margin: 10px 0; opacity:0.5;">OR USE EMAIL OTP</div>
+            <form action="/send_otp" method="POST">
+                <input type="email" name="email" placeholder="new.user@email.com" required>
+                <button type="submit" class="login-btn">Send Verification Code</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalLogin">
+        <div class="login-card">
+            <span class="close-btn" onclick="closeModal('modalLogin')">&times;</span>
+            <h2>Welcome Back</h2>
+            <a href="/login/google" style="display:block; background:white; border:1px solid #ddd; padding:10px; border-radius:8px; text-decoration:none; color:#333; margin-bottom:15px;">
+                <img src="https://img.icons8.com/color/48/google-logo.png" width="20" style="vertical-align:middle;"> Login with Google
+            </a>
+            <div style="margin: 10px 0; opacity:0.5;">OR USE PASSWORD</div>
+            <form action="/login_password" method="POST">
+                <input type="email" name="email" placeholder="your@email.com" required>
+                <input type="password" name="password" placeholder="••••••••" required>
+                <button type="submit" class="login-btn">Log In</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const signupModal = document.getElementById('modalSignup');
+        const loginModal = document.getElementById('modalLogin');
+        
+        document.getElementById('btnSignup').onclick = () => signupModal.classList.add('active');
+        document.getElementById('btnLogin').onclick = () => loginModal.classList.add('active');
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+    </script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
