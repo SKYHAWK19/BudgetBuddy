@@ -182,12 +182,13 @@ def login_password():
 def login_google():
     google_provider_cfg = requests.get(GOOGLE_DISCOVERY_URL).json()
     
-    # Dynamic redirect URI based on environment
-    redirect_uri = "http://127.0.0.1:5000/authorize/google"
-    if os.getenv('MYSQL_HOST') and 'pythonanywhere' in os.getenv('MYSQL_HOST'):
-        # Construct the live URL dynamically
-        base_url = "https://" + os.environ.get('MYSQL_HOST').split('.')[0] + ".pythonanywhere.com"
-        redirect_uri = base_url + "/authorize/google"
+    # Dynamically build the redirect URI based on the current request
+    # This automatically handles localhost (HTTP) and Render (HTTPS)
+    redirect_uri = url_for('callback', _external=True)
+    
+    # Force HTTPS if we are not on localhost (required for Render/Google)
+    if "localhost" not in redirect_uri and "127.0.0.1" not in redirect_uri:
+        redirect_uri = redirect_uri.replace("http://", "https://")
 
     request_uri = client.prepare_request_uri(
         google_provider_cfg["authorization_endpoint"],
@@ -195,19 +196,22 @@ def login_google():
         scope=["openid", "email", "profile"],
     )
     return redirect(request_uri)
-
 @app.route("/authorize/google")
 def callback():
     code = request.args.get("code")
     google_provider_cfg = requests.get(GOOGLE_DISCOVERY_URL).json()
     
-    # Handle both http (local) and https (live) callbacks
+    # Force HTTPS for Render to prevent redirect_uri_mismatch
+    authorization_response = request.url.replace("http://", "https://")
+    redirect_url = request.base_url.replace("http://", "https://")
+    
     token_url, headers, body = client.prepare_token_request(
         google_provider_cfg["token_endpoint"],
-        authorization_response=request.url.replace("http://", "https://") if "pythonanywhere" in request.url else request.url,
-        redirect_url=request.base_url.replace("http://", "https://") if "pythonanywhere" in request.base_url else request.base_url,
+        authorization_response=authorization_response,
+        redirect_url=redirect_url,
         code=code
     )
+    
     token_res = requests.post(token_url, headers=headers, data=body, auth=(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET))
     client.parse_request_body_response(json.dumps(token_res.json()))
     
@@ -219,20 +223,24 @@ def callback():
 
     if not user:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True) # dictionary=True makes it easier to access columns
         cursor.execute(
             "INSERT INTO clients (google_id, name, email, profile_pic, password, budget) VALUES (%s, %s, %s, %s, %s, %s)",
             (userinfo_res.get("sub"), userinfo_res.get("name"), email, userinfo_res.get("picture"), "google_auth", 15000)
         )
         conn.commit()
-        user = find_user_by_email(email)
         cursor.close()
         conn.close()
+        user = find_user_by_email(email)
 
-    session['user'] = {'name': user['name'], 'email': user['email'], 'given_name': user['name'].split()[0], 'picture': user['profile_pic']}
+    session['user'] = {
+        'name': user['name'], 
+        'email': user['email'], 
+        'given_name': user['name'].split()[0], 
+        'picture': user['profile_pic']
+    }
     session['client_id'] = user['client_id']
     return redirect(url_for('dashboard'))
-
 # --- MAIN APP ROUTES ---
 @app.route('/dashboard')
 def dashboard():
@@ -476,3 +484,4 @@ def chart_data_api():
 if __name__ == '__main__':
 
     app.run(port=5000, debug=True)
+
