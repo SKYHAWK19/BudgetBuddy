@@ -32,10 +32,12 @@ if os.getenv('OAUTHLIB_INSECURE_TRANSPORT'):
 # --- 4. DATABASE CONNECTION ---
 def get_db_connection():
     return mysql.connector.connect(
-        host=os.getenv('MYSQL_HOST', 'localhost'),
-        user=os.getenv('MYSQL_USER', 'root'),
-        password=os.getenv('MYSQL_PASSWORD', ''),
-        database=os.getenv('MYSQL_DB', 'budgetbuddy')
+        # These names must match the "Keys" you enter in Render's dashboard
+        host=os.getenv('DB_HOST'),
+        port=os.getenv('DB_PORT'),
+        user=os.getenv('DB_USER'),
+        password=os.getenv('DB_PASSWORD'),
+        database=os.getenv('DB_NAME')
     )
 
 # --- 5. GOOGLE SETUP ---
@@ -472,4 +474,5 @@ def chart_data_api():
     return jsonify({'chart': chart})
 
 if __name__ == '__main__':
+
     app.run(port=5000, debug=True)
