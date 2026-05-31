@@ -11,15 +11,14 @@
         /* --- LAYOUT GRID --- */
         .bottom-section {
             display: grid;
-            grid-template-columns: 2fr 1fr; /* Chart = 2 parts, Clock = 1 part */
+            grid-template-columns: 2fr 1fr;
             gap: 20px;
             margin-top: 2rem;
             margin-bottom: 3rem;
         }
 
-        /* Responsive Breakpoint for Bottom Section */
         @media (max-width: 1000px) {
-            .bottom-section { grid-template-columns: 1fr; } /* Stack on tablet/mobile */
+            .bottom-section { grid-template-columns: 1fr; } 
         }
 
         /* --- CLOCK STYLES --- */
@@ -62,7 +61,54 @@
             color: var(--text-color);
             cursor: pointer;
             margin-right: 10px;
-            max-width: 150px; /* Limit width */
+            max-width: 150px;
+        }
+
+        /* --- SUPER STYLED BUTTONS --- */
+        .add-money-btn {
+            background: linear-gradient(135deg, var(--accent-color), #00b894);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 30px; 
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0, 184, 148, 0.3);
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .add-money-btn:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 8px 25px rgba(0, 184, 148, 0.6); 
+        }
+
+        .add-money-btn:active {
+            transform: translateY(1px); 
+        }
+
+        /* --- MODAL SAVE BUTTONS --- */
+        .login-btn {
+            background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+            color: white;
+            border: none;
+            padding: 12px;
+            width: 100%;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(108, 92, 231, 0.4);
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(108, 92, 231, 0.6);
         }
     </style>
 </head>
@@ -84,9 +130,8 @@
             <ul class="nav-links">
                 <li class="active"><a href="#"><i class="material-icons-sharp">grid_view</i> Dashboard</a></li>
                 <li><a href="{{ url_for('reports') }}"><i class="material-icons-sharp">insights</i> Reports</a></li>
-                
+                <li><a href="{{ url_for('goals') }}"><i class="material-icons-sharp">savings</i> Goals</a></li>
                 <li><a href="{{ url_for('settings') }}"><i class="material-icons-sharp">settings</i> Settings</a></li>
-                
                 <li>
                     <a href="#" onclick="toggleSupport()">
                         <i class="material-icons-sharp">support_agent</i> Support
@@ -101,6 +146,7 @@
                         <i class="material-icons-sharp">logout</i> Logout
                     </a>
                 </li>
+                
             </ul>
         </aside>
 
@@ -126,7 +172,6 @@
             <div class="cards-grid">
                 
                 <div class="card balance-card" style="display: flex; flex-direction: row; justify-content: space-between; align-items: flex-start;">
-                    
                     <div>
                         <h3>Total Balance</h3>
                         <div class="amount" style="margin-top: 10px; margin-bottom: 5px;">{{ data.currency }}{{ data.balance }}</div>
@@ -134,7 +179,6 @@
                     </div>
 
                     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 15px;">
-                        
                         <button onclick="openBudgetModal()" style="background:none; border:none; color:white; cursor:pointer; padding: 0;" title="Edit Budget Limit">
                             <span class="material-icons-sharp">edit</span>
                         </button>
@@ -147,7 +191,6 @@
                                 <span class="material-icons-sharp" style="font-weight: bold;">remove</span>
                             </button>
                         </div>
-
                     </div>
                 </div>
                 <div class="card">
@@ -164,7 +207,9 @@
             <div class="recent-orders" style="margin-top: 2rem;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
                     <h2>Recent Activity</h2>
-                    <button class="add-money-btn" onclick="openModal()" style="background: var(--accent-color); color: white; border: none; padding: 10px 20px;">+ Add Expense</button>
+                    <button class="add-money-btn" onclick="openModal()">
+                        <span class="material-icons-sharp">add_circle</span> Add Expense
+                    </button>
                 </div>
                 <div class="card transactions">
                     <table>
@@ -173,16 +218,31 @@
                             {% for t in transactions %}
                             <tr>
                                 <td>{{ t.category }}</td>
-                                <td>{{ t.description }}</td>
+                                <td>
+    {{ t.description }}
+    {% if t.is_recurring %}
+        <span title="Recurring Template" style="font-size: 0.85rem; background: rgba(0, 184, 148, 0.15); padding: 3px 6px; border-radius: 8px; margin-left: 8px; border: 1px solid rgba(0, 184, 148, 0.3); cursor: help;">
+            🔁
+        </span>
+    {% endif %}
+</td>
                                 <td class="expense" style="display: flex; justify-content: space-between; align-items: center;">
                                     <span>-{{ data.currency }}{{ t.amount }}</span>
                                     
-                                    <span class="material-icons-sharp" 
-                                          style="font-size: 18px; cursor: pointer; color: var(--text-color); opacity: 0.5;"
-                                          onclick="openEditTransaction('{{ t.entry_id }}', '{{ t.description }}', '{{ t.amount }}')"
-                                          title="Edit Entry">
-                                          edit
-                                    </span>
+                                    <div style="display: flex; gap: 10px;">
+                                        <span class="material-icons-sharp" 
+                                              style="font-size: 18px; cursor: pointer; color: var(--text-color); opacity: 0.5;"
+                                              onclick="openEditTransaction('{{ t.entry_id }}', '{{ t.description }}', '{{ t.amount }}')"
+                                              title="Edit Entry">
+                                              edit
+                                        </span>
+                                        <span class="material-icons-sharp" 
+                                              style="font-size: 18px; cursor: pointer; color: var(--danger); opacity: 0.7;"
+                                              onclick="openDeleteModal('{{ t.entry_id }}', '{{ t.description }}', '{{ t.is_recurring }}')"
+                                              title="Delete Entry">
+                                              delete
+                                        </span>
+                                    </div>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -192,7 +252,6 @@
             </div>
 
             <div class="bottom-section">
-                
                 <div class="sales-analytics">
                     <h2>Spending Analysis</h2>
                     <div class="card chart-card-wide" style="height: 100%;">
@@ -220,7 +279,6 @@
                         <div class="clock-date" id="clockDate">January 1, 2025</div>
                     </div>
                 </div>
-
             </div>
         </div> 
     </div> 
@@ -229,7 +287,7 @@
         <div class="login-card">
             <span class="close-btn" onclick="closeModal('expenseModal')">&times;</span>
             <h2>Add Expense</h2>
-            <form action="{{ url_for('add_expense') }}" method="POST">
+            <form id="addExpenseForm">
                 <label>Category</label>
                 <select name="category" required style="width:100%; padding:10px; margin:10px 0; border-radius:5px;">
                     <option value="Food">🍔 Food</option>
@@ -240,6 +298,13 @@
                 </select>
                 <input type="text" name="description" placeholder="Description" required>
                 <input type="number" name="amount" placeholder="Amount" required>
+                
+                <label class="custom-checkbox-wrapper">
+                    <input type="checkbox" name="is_recurring" id="is_recurring">
+                    <div class="custom-checkmark"></div>
+                    <span>🔁 Make this a monthly recurring expense</span>
+                </label>
+
                 <button type="submit" class="login-btn">Save</button>
             </form>
         </div>
@@ -249,7 +314,7 @@
         <div class="login-card">
             <span class="close-btn" onclick="closeModal('budgetModal')">&times;</span>
             <h2>Update Budget</h2>
-            <form action="{{ url_for('update_budget') }}" method="POST">
+            <form id="updateBudgetForm">
                 <input type="number" name="budget" value="{{ data.budget }}" required>
                 <button type="submit" class="login-btn">Update</button>
             </form>
@@ -273,7 +338,7 @@
         <div class="login-card">
             <span class="close-btn" onclick="closeModal('editTransactionModal')">&times;</span>
             <h2>Edit Transaction</h2>
-            <form action="{{ url_for('edit_transaction') }}" method="POST">
+            <form id="editExpenseForm">
                 <input type="hidden" id="edit_id" name="id">
                 <label>Description</label>
                 <input type="text" id="edit_desc" name="description" required>
@@ -284,7 +349,44 @@
         </div>
     </div>
 
+    <div id="deleteModal" class="modal-overlay">
+        <div class="login-card" style="text-align: center;">
+            <span class="close-btn" onclick="closeModal('deleteModal')">&times;</span>
+            <div style="font-size: 4rem; margin-bottom: 10px;">🗑️</div>
+            <h2 style="margin-bottom: 20px;">Delete Expense?</h2>
+            
+            <input type="hidden" id="delete_expense_id">
+            
+            <!-- THIS BOX ONLY SHOWS IF IT IS A TEMPLATE -->
+            <div id="smart-ask-box" style="background: rgba(0,0,0,0.05); padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: left; display: none;">
+                <p style="margin-bottom: 10px; font-weight: bold; color: var(--text-color);">How should we handle this?</p>
+                <label style="display: block; margin-bottom: 8px; cursor: pointer; color: var(--text-color);">
+                    <input type="radio" name="delete_mode" value="single" checked>
+                    Just delete this specific entry
+                </label>
+                <label style="display: block; cursor: pointer; color: var(--danger);">
+                    <input type="radio" name="delete_mode" value="all">
+                    Delete & <b>Stop Repeating</b> <span id="delete-desc-preview" style="opacity:0.8;"></span>
+                </label>
+            </div>
+
+            <!-- THIS TEXT SHOWS FOR NORMAL EXPENSES -->
+            <p id="normal-delete-text" style="margin-bottom: 20px; color: var(--text-color);">
+                Are you sure you want to delete this expense?
+            </p>
+            
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button onclick="closeModal('deleteModal')" class="login-btn" style="background: #636e72;">Cancel</button>
+                <button id="confirmDeleteBtn" class="login-btn" style="background: var(--danger);">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CLIENT_ID = "{{ session['client_id'] }}";
+    </script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    
     <script>
         // --- 1. SMART CLOCK LOGIC ---
         let currentDayStr = new Date().toDateString();
