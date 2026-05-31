@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /* =========================================
-       2. SIDEBAR & MENU LOGIC (The Pop-up)
+       2. SIDEBAR & MENU LOGIC
        ========================================= */
     const menuBtn = document.getElementById('menuBtn');
     const sidebar = document.getElementById('sidebar');
@@ -46,20 +46,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (menuBtn) {
         menuBtn.addEventListener('click', () => {
             sidebar.classList.add('active');
-            overlay.classList.add('active');
+            if (overlay) overlay.classList.add('active');
         });
     }
 
     // Close Sidebar Function
     const closeSidebar = () => {
         sidebar.classList.remove('active');
-        overlay.classList.remove('active');
+        if (overlay) overlay.classList.remove('active');
     };
 
     // Trigger Close on 'X' button or Clicking the Dark Overlay
     if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', closeSidebar);
     if (overlay) overlay.addEventListener('click', closeSidebar);
-
 
     /* =========================================
        3. LOGIN PAGE MODALS
@@ -94,11 +93,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // 1. Logic for Dramatic Budget Modal (+ / -)
 function quickUpdateBudget(action) {
-    // A. Set the hidden input value to tell backend if we are Adding or Subtracting
     const actionInput = document.getElementById('incAction');
     if (actionInput) actionInput.value = action;
 
-    // B. Handle the Drama (Emoji & Text)
     const emojiDiv = document.getElementById('incEmoji');
     const titleH2 = document.getElementById('incTitle');
 
@@ -110,7 +107,6 @@ function quickUpdateBudget(action) {
         if (titleH2) titleH2.innerText = "Decrease Budget";
     }
 
-    // C. Open the Modal
     const modal = document.getElementById('incBudgetModal');
     if (modal) modal.classList.add('active');
 }
@@ -123,4 +119,186 @@ function openEditTransaction(id, desc, amount) {
     
     const modal = document.getElementById('editTransactionModal');
     if (modal) modal.classList.add("active");
+}
+
+/* =========================================
+   5. FASTAPI BACKGROUND REQUESTS
+   ========================================= */
+
+// 1. UPDATE BUDGET API CALL
+const budgetForm = document.getElementById('updateBudgetForm');
+if (budgetForm) {
+    budgetForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const budgetAmount = document.querySelector('input[name="budget"]').value;
+
+        try {
+            const response = await fetch('/api/v1/budget', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Client-ID': CLIENT_ID
+                },
+                body: JSON.stringify({ budget: parseFloat(budgetAmount) })
+            });
+
+            if (response.ok) {
+                window.location.reload(); 
+            } else {
+                alert("Error updating budget: " + await response.text());
+            }
+        } catch (error) {
+            console.error("Network error:", error);
+        }
+    });
+}
+
+// 2. ADD EXPENSE API CALL
+const expenseForm = document.getElementById('addExpenseForm');
+if (expenseForm) {
+    expenseForm.addEventListener('submit', async function(e) {
+        e.preventDefault(); 
+
+        const formData = new FormData(this);
+        
+        // Check if the toggle is checked
+        const recurringToggle = document.getElementById('is_recurring');
+        const isRecurring = recurringToggle ? recurringToggle.checked : false;
+        
+        // Automatically grab the day of the month from the selected date
+        let recurringDay = null;
+        if (isRecurring) {
+            const dateVal = formData.get('date') || new Date().toISOString().split('T')[0];
+            recurringDay = parseInt(dateVal.split('-')[2]); 
+        }
+
+        const data = {
+            amount: parseFloat(formData.get('amount')),
+            category: formData.get('category'),
+            description: formData.get('description'),
+            date: formData.get('date') || null,
+            is_recurring: isRecurring,
+            recurring_day: recurringDay
+        };
+
+        try {
+            const response = await fetch('/api/v1/expenses', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Client-ID': CLIENT_ID
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                alert("Error adding expense: " + await response.text());
+            }
+        } catch (error) { 
+            console.error("Network error:", error); 
+        }
+    });
+}
+
+// 3. EDIT EXPENSE API CALL
+const editForm = document.getElementById('editExpenseForm');
+if (editForm) {
+    editForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(this);
+        const expenseId = formData.get('id'); 
+        
+        const data = {
+            amount: parseFloat(formData.get('amount')),
+            category: formData.get('category') || "Other",
+            description: formData.get('description')
+        };
+
+        try {
+            const response = await fetch(`/api/v1/expenses/${expenseId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Client-ID': CLIENT_ID
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                alert("Error updating expense: " + await response.text());
+            }
+        } catch (error) { 
+            console.error("Network error:", error); 
+        }
+    });
+}
+
+// 4. SMART DELETE EXPENSE API CALL
+window.openDeleteModal = function(id, description, isTemplate) {
+    document.getElementById('delete_expense_id').value = id;
+    
+    const askBox = document.getElementById('smart-ask-box');
+    const normalText = document.getElementById('normal-delete-text');
+    
+    // Clean up the string coming from the HTML/Database
+    const isRecurring = (isTemplate === '1' || isTemplate === 'True' || isTemplate === 'true');
+    
+    // Check if the item is a recurring template
+    if (isRecurring) {
+        if(askBox) askBox.style.display = 'block';     
+        if(normalText) normalText.style.display = 'none';  
+        document.getElementById('delete-desc-preview').innerText = `("${description}")`;
+        document.querySelector('input[name="delete_mode"][value="single"]').checked = true;
+    } else {
+        if(askBox) askBox.style.display = 'none';      
+        if(normalText) normalText.style.display = 'block'; 
+        
+        // Invisibly select 'single' so the backend doesn't accidentally wipe subscriptions
+        const singleRadio = document.querySelector('input[name="delete_mode"][value="single"]');
+        if (singleRadio) singleRadio.checked = true;
+    }
+    
+    const modal = document.getElementById('deleteModal');
+    if(modal) modal.classList.add('active');
+};
+
+// 5. CONFIRM DELETE BUTTON
+const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+if (confirmDeleteBtn) {
+    confirmDeleteBtn.addEventListener('click', async function() {
+        const expenseId = document.getElementById('delete_expense_id').value;
+        
+        // Check which radio button is selected
+        const checkedMode = document.querySelector('input[name="delete_mode"]:checked');
+        const deleteMode = checkedMode ? checkedMode.value : 'single';
+        const stopRecurring = (deleteMode === 'all'); 
+        
+        try {
+            const response = await fetch(`/api/v1/expenses/${expenseId}?stop_recurring=${stopRecurring}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Client-ID': CLIENT_ID
+                }
+            });
+
+            if (response.ok) {
+                const modal = document.getElementById('deleteModal');
+                if(modal) modal.classList.remove('active');
+                window.location.reload();
+            } else {
+                const err = await response.json();
+                alert("Error deleting expense: " + (err.detail || "Unknown error"));
+            }
+        } catch (error) {
+            console.error("Network error:", error);
+            alert("Network error. Please try again.");
+        }
+    });
 }
