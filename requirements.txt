@@ -1,9 +1,12 @@
 flask
-mysql-connector-python
-python-dotenv
-requests
-oauthlib
 fastapi
 uvicorn
 pydantic
 python-multipart
+mysql-connector-python
+python-dotenv
+requests
+oauthlib
+requests-oauthlib
+werkzeug
+apscheduler
