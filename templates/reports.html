@@ -24,29 +24,25 @@
         .filter-select { padding: 8px; border-radius: 5px; border: 1px solid #ddd; background: var(--bg-color); color: var(--text-color); flex-grow: 1; }
         @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* --- RESPONSIVE DRAWER ANIMATION --- */
+        /* --- RESPONSIVE --- */
         @media (max-width: 768px) {
             .summary-grid { grid-template-columns: 1fr; }
             .filter-drawer { flex-direction: column; align-items: stretch; }
             .transactions { overflow-x: auto; }
             .report-header h3 { font-size: 1.1rem; }
-
-            /* Smooth Sidebar Logic */
             .sidebar {
-                display: block !important; /* Override default hidden state */
+                display: block !important;
                 position: fixed;
                 top: 0;
-                left: -100%; /* Start Hidden to the left */
+                left: -100%;
                 height: 100vh;
                 width: 260px;
                 z-index: 999;
                 background: var(--card-bg);
                 box-shadow: 5px 0 15px rgba(0,0,0,0.1);
-                transition: left 0.4s ease; /* The Smooth Effect */
+                transition: left 0.4s ease;
             }
-            .sidebar.active {
-                left: 0; /* Slide In */
-            }
+            .sidebar.active { left: 0; }
         }
     </style>
 </head>
@@ -62,6 +58,7 @@
             <ul class="nav-links">
                 <li><a href="{{ url_for('dashboard') }}"><i class="material-icons-sharp">grid_view</i> Dashboard</a></li>
                 <li class="active"><a href="#"><i class="material-icons-sharp">insights</i> Reports</a></li>
+                <li><a href="{{ url_for('goals') }}"><i class="material-icons-sharp">savings</i> Goals</a></li>
                 <li><a href="{{ url_for('settings') }}"><i class="material-icons-sharp">settings</i> Settings</a></li>
                 <li>
                     <a href="#" onclick="toggleSupport()">
@@ -112,11 +109,18 @@
                 <canvas id="categoryChart"></canvas>
             </div>
 
-            <div class="history-header">
+        <div class="history-header">
                 <h3>Transaction History</h3>
-                <button class="filter-btn" onclick="toggleFilterDrawer()">
-                    <span class="material-icons-sharp" style="font-size: 1.2rem;">filter_list</span> Filter By
-                </button>
+                <div style="display: flex; gap: 10px;">
+                    <!-- Updated Filter Button -->
+                    <button class="gradient-btn" onclick="toggleFilterDrawer()">
+                        <span class="material-icons-sharp" style="font-size: 1.2rem;">filter_list</span> Filter By
+                    </button>
+                    <!-- Updated Export Button -->
+                    <button class="gradient-btn" onclick="exportFilteredCSV()">
+                        <span class="material-icons-sharp" style="font-size: 1.2rem;">download</span> Export CSV
+                    </button>
+                </div>
             </div>
 
             <div class="filter-drawer" id="filterDrawer">
@@ -143,7 +147,14 @@
                                     {% for t in entries %}
                                     <tr class="tx-row" data-category="{{ t.category }}">
                                         <td>{{ t.category }}</td>
-                                        <td>{{ t.description }}</td>
+                                        <td>
+                                            {{ t.description }}
+                                            {% if t.is_recurring %}
+                                                <span title="Recurring Template" style="font-size: 0.85rem; background: rgba(0, 184, 148, 0.15); padding: 3px 6px; border-radius: 8px; margin-left: 8px; border: 1px solid rgba(0, 184, 148, 0.3); cursor: help;">
+                                                    🔁
+                                                </span>
+                                            {% endif %}
+                                        </td>
                                         <td class="expense">-₹{{ t.amount }}</td>
                                         <td style="font-size: 0.8rem; opacity: 0.6;">{{ t.date }}</td>
                                     </tr>
@@ -199,12 +210,52 @@
         function resetFilters() {
             document.getElementById('catFilter').value = 'all';
             document.getElementById('dayFilter').value = '';
-            applyFilters(); toggleFilterDrawer();
+            applyFilters(); 
+            toggleFilterDrawer();
         }
 
         function toggleSupport() {
             const d = document.getElementById('support-details');
             d.style.display = (d.style.display === "none") ? "block" : "none";
+        }
+        function exportFilteredCSV() {
+            // 1. Setup clean CSV headers
+            let csvContent = "data:text/csv;charset=utf-8,Date,Category,Description,Amount\n";
+            
+            // 2. Loop through the daily groups
+            const dailyGroups = document.querySelectorAll('.daily-group');
+            
+            dailyGroups.forEach(group => {
+                if (group.style.display === 'none') return; // Skip hidden days
+                const groupDate = group.getAttribute('data-date');
+                
+                const rows = group.querySelectorAll('.tx-row');
+                rows.forEach(row => {
+                    if (row.style.display !== 'none') { // Skip hidden categories
+                        const cols = row.querySelectorAll('td');
+                        
+                        const category = cols[0].innerText.trim();
+                        
+                        // Clean description (remove the recurring 🔁 emoji if present)
+                        let desc = cols[1].innerText.trim().replace(/🔁/g, '').trim(); 
+                        desc = `"${desc.replace(/"/g, '""')}"`; // Escape quotes for SQL safety
+                        
+                        // Clean amount (remove -₹ and commas)
+                        let amount = cols[2].innerText.trim().replace('-₹', '').replace(/,/g, ''); 
+                        
+                        csvContent += `${groupDate},${category},${desc},${amount}\n`;
+                    }
+                });
+            });
+
+            // 3. Trigger the automatic download
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `BudgetBuddy_Export_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
 
         // --- 2. CHART ---
@@ -217,14 +268,21 @@
             type: 'bar',
             data: {
                 labels: {{ r.categories | tojson }},
-                datasets: [{ label: 'Spent (₹)', data: {{ r.cat_values | tojson }}, backgroundColor: '#8e44ad', borderRadius: 5 }]
+                datasets: [{ 
+                    label: 'Spent (₹)', 
+                    data: {{ r.cat_values | tojson }}, 
+                    backgroundColor: '#8e44ad', 
+                    borderRadius: 5 
+                }]
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true, 
+                maintainAspectRatio: false,
                 scales: {
                     y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor } },
                     x: { grid: { display: false }, ticks: { color: textColor } }
-                }, plugins: { legend: { display: false } }
+                }, 
+                plugins: { legend: { display: false } }
             }
         });
 
@@ -237,22 +295,19 @@
             myCategoryChart.update();
         };
 
-        // --- 3. SMOOTH SIDEBAR (UPDATED) ---
+        // --- 3. SIDEBAR ---
         const sideMenu = document.getElementById('sidebar');
         const menuBtn = document.getElementById('menuBtn');
 
         if(menuBtn) {
             menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                // Toggle the class 'active' instead of display block
                 sideMenu.classList.add('active');
             });
         }
 
         document.addEventListener('click', (e) => {
             const isMobileMode = window.getComputedStyle(menuBtn).display !== 'none';
-            
-            // Check if the sidebar has the active class
             if (isMobileMode && sideMenu.classList.contains('active')) {
                 if (!sideMenu.contains(e.target) && !menuBtn.contains(e.target)) {
                     sideMenu.classList.remove('active');
