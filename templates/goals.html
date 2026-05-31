@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goals - BudgetBuddy</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Sharp" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="modal-overlay" id="overlay"></div>
+
+    <div class="dashboard-body">
+
+        <aside class="sidebar" id="sidebar">
+            <div class="profile-section">
+                <span class="material-icons-sharp" id="closeSidebarBtn" style="display:none; float:right; cursor:pointer;">close</span>
+                <br>
+                <img src="{{ user.picture }}" class="avatar" alt="Profile">
+                <h2>{{ user.given_name }}</h2>
+                <p style="opacity: 0.7;">BudgetBuddy User</p>
+            </div>
+            <ul class="nav-links">
+                <li><a href="{{ url_for('dashboard') }}"><i class="material-icons-sharp">grid_view</i> Dashboard</a></li>
+                <li><a href="{{ url_for('reports') }}"><i class="material-icons-sharp">insights</i> Reports</a></li>
+                <li class="active"><a href="#"><i class="material-icons-sharp">savings</i> Goals</a></li>
+                <li><a href="{{ url_for('settings') }}"><i class="material-icons-sharp">settings</i> Settings</a></li>
+                <li style="margin-top: auto;"><a href="{{ url_for('logout') }}" style="color: var(--danger);"><i class="material-icons-sharp">logout</i> Logout</a></li>
+            </ul>
+        </aside>
+
+        <div class="main-content">
+            <div class="top-navbar">
+                <button class="menu-btn" id="menuBtn"><span class="material-icons-sharp">menu</span></button>
+                <h2>Savings Goals</h2>
+                <button class="theme-toggle-dash" id="themeBtn">🌙</button>
+            </div>
+
+            <div class="goals-summary" id="summaryCards">
+                <div class="card">
+                    <h3>Total Goals</h3>
+                    <div class="amount" id="totalGoals">—</div>
+                </div>
+                <div class="card">
+                    <h3>Total Saved</h3>
+                    <div class="amount" id="totalSaved">—</div>
+                </div>
+                <div class="card balance-card">
+                    <h3>Goals Completed</h3>
+                    <div class="amount" id="goalsCompleted">—</div>
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+                <h2>Your Goals</h2>
+                <button class="add-goal-btn" onclick="openAddGoalModal()">
+                    <span class="material-icons-sharp">add_circle</span> New Goal
+                </button>
+            </div>
+
+            <div class="goals-grid" id="goalsGrid">
+                <div class="empty-state">
+                    <span class="material-icons-sharp">hourglass_empty</span>
+                    <p>Loading your goals...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="addGoalModal" class="modal-overlay">
+        <div class="login-card">
+            <span class="close-btn" onclick="closeModal('addGoalModal')">&times;</span>
+            <h2>🎯 New Savings Goal</h2>
+            <form id="addGoalForm">
+                <label>Goal Name</label>
+                <input type="text" name="name" placeholder="e.g. Trip to Goa" required style="width:100%; padding:10px; margin:5px 0; border-radius:8px; border:1px solid #ccc;">
+                <label>Target Amount (₹)</label>
+                <input type="number" name="target_amount" required style="width:100%; padding:10px; margin:5px 0; border-radius:8px; border:1px solid #ccc;">
+                <label>Deadline (optional)</label>
+                <input type="date" name="deadline" style="width:100%; padding:10px; margin:5px 0; border-radius:8px; border:1px solid #ccc;">
+                <button type="submit" class="login-btn">Create Goal 🚀</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="deleteGoalModal" class="modal-overlay">
+        <div class="login-card" style="text-align:center;">
+            <span class="close-btn" onclick="closeModal('deleteGoalModal')">&times;</span>
+            <div style="font-size:4rem; margin-bottom:10px;">🗑️</div>
+            <h2>Delete Goal?</h2>
+            <p style="opacity:0.7; margin: 10px 0 20px;">This will permanently delete this goal and all progress.</p>
+            <input type="hidden" id="delete_goal_id">
+            <div style="display:flex; gap:10px; justify-content:center;">
+                <button onclick="closeModal('deleteGoalModal')" class="login-btn" style="background:#636e72;">Cancel</button>
+                <button onclick="confirmDeleteGoal()" class="login-btn" style="background:var(--danger);">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script>const CLIENT_ID = "{{ session['client_id'] }}";</script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+
+    <script>
+        let allGoals = [];
+        let goalCharts = {};
+
+        function closeModal(id) {
+            const modal = document.getElementById(id);
+            if (modal) modal.classList.remove('active');
+        }
+
+        async function loadGoals() {
+            try {
+                const res = await fetch('/api/v1/goals', { headers: { 'X-Client-ID': CLIENT_ID } });
+                allGoals = await res.json();
+                renderGoals(allGoals);
+                updateSummary(allGoals);
+            } catch (err) { console.error(err); }
+        }
+
+        function updateSummary(goals) {
+            const completed = goals.filter(g => g.saved_amount >= g.target_amount).length;
+            const totalSaved = goals.reduce((sum, g) => sum + g.saved_amount, 0);
+            document.getElementById('totalGoals').innerText = goals.length;
+            document.getElementById('totalSaved').innerText = '₹' + Math.round(totalSaved).toLocaleString('en-IN');
+            document.getElementById('goalsCompleted').innerText = completed;
+        }
+
+        function renderGoals(goals) {
+            const grid = document.getElementById('goalsGrid');
+
+            for (let id in goalCharts) goalCharts[id].destroy();
+            goalCharts = {};
+
+            if (goals.length === 0) {
+                grid.innerHTML = `<div class="empty-state"><span class="material-icons-sharp">savings</span><p>No goals yet.</p></div>`;
+                return;
+            }
+
+            grid.innerHTML = goals.map((g, index) => {
+                const pct = Math.min(Math.round((g.saved_amount / g.target_amount) * 100), 100);
+                const isCompleted = pct >= 100;
+                const deadlineText = g.deadline ? `<span class="goal-deadline">${g.deadline}</span>` : ``;
+
+                return `
+                <div class="goal-card ${isCompleted ? 'completed' : ''}">
+                    <div class="goal-card-header">
+                        <span class="goal-name">${g.name}</span>
+                        <button class="goal-delete-btn" onclick="openDeleteGoalModal(${g.goal_id})"><span class="material-icons-sharp">delete_outline</span></button>
+                    </div>
+
+                    <div class="goal-donut-wrapper">
+                        <div class="goal-donut-container">
+                            <canvas id="donut_${g.goal_id}" width="90" height="90"></canvas>
+                            <div class="goal-donut-label">${pct}%</div>
+                        </div>
+                        <div class="goal-amounts">
+                            <div class="goal-saved">₹${Math.round(g.saved_amount).toLocaleString('en-IN')}</div>
+                            <div class="goal-target">of ₹${Math.round(g.target_amount).toLocaleString('en-IN')}</div>
+                            ${isCompleted ? '<span class="goal-completed-badge">✅ Completed!</span>' : ''}
+                        </div>
+                    </div>
+
+                    ${!isCompleted ? `
+                    <div class="goal-add-row">
+                        <input type="number" class="goal-add-input" id="add_input_${g.goal_id}" placeholder="Add amount (₹)" min="1">
+                        <button class="goal-add-btn" onclick="addToGoal(${g.goal_id})"><span class="material-icons-sharp" style="font-size:1rem;">add</span></button>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 0.8rem; opacity: 0.8;">
+                        <label style="cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                            <input type="checkbox" id="deduct_${g.goal_id}" checked>
+                            Deduct from balance (Add as expense)
+                        </label>
+                    </div>` : ''}
+                </div>`;
+            }).join('');
+
+            goals.forEach(g => {
+                const pct = Math.min((g.saved_amount / g.target_amount) * 100, 100);
+                const remaining = 100 - pct;
+                const canvas = document.getElementById(`donut_${g.goal_id}`);
+                if (!canvas) return;
+
+                goalCharts[g.goal_id] = new Chart(canvas, {
+                    type: 'doughnut',
+                    data: {
+                        datasets: [{
+                            data: [pct, remaining],
+                            backgroundColor: [pct >= 100 ? '#00b894' : '#6c5ce7', 'rgba(0,0,0,0.08)'],
+                            borderWidth: 0, cutout: '72%'
+                        }]
+                    },
+                    options: { responsive: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, animation: { duration: 0 } }
+                });
+            });
+        }
+
+        async function addToGoal(goalId) {
+            const input = document.getElementById(`add_input_${goalId}`);
+            const amount = parseFloat(input.value);
+            
+            const deductCheckbox = document.getElementById(`deduct_${goalId}`);
+            const deduct = deductCheckbox ? deductCheckbox.checked : false;
+
+            if (!amount || amount <= 0) return;
+
+            try {
+                const res = await fetch(`/api/v1/goals/${goalId}?amount=${amount}&deduct=${deduct}`, { 
+                    method: 'PUT',
+                    headers: { 'X-Client-ID': CLIENT_ID }
+                });
+                if (res.ok) {
+                    input.value = ''; // clear input
+                    loadGoals(); 
+                }
+            } catch (err) { console.error(err); }
+        }
+
+        function openAddGoalModal() { document.getElementById('addGoalModal').classList.add('active'); }
+        function openDeleteGoalModal(id) { document.getElementById('delete_goal_id').value = id; document.getElementById('deleteGoalModal').classList.add('active'); }
+
+        async function confirmDeleteGoal() {
+            const goalId = document.getElementById('delete_goal_id').value;
+            try {
+                const res = await fetch(`/api/v1/goals/${goalId}`, { method: 'DELETE', headers: { 'X-Client-ID': CLIENT_ID } });
+                if (res.ok) { closeModal('deleteGoalModal'); loadGoals(); }
+            } catch (err) { console.error(err); }
+        }
+
+        document.getElementById('addGoalForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const data = { name: formData.get('name'), target_amount: parseFloat(formData.get('target_amount')), deadline: formData.get('deadline') || null };
+            try {
+                const res = await fetch('/api/v1/goals', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Client-ID': CLIENT_ID }, body: JSON.stringify(data) });
+                if (res.ok) { closeModal('addGoalModal'); this.reset(); loadGoals(); }
+            } catch (err) { console.error(err); }
+        });
+
+        loadGoals();
+    </script>
+</body>
+</html>
