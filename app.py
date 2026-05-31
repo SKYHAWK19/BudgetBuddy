@@ -5,14 +5,18 @@ import requests
 import json
 import mysql.connector
 import sys
-from datetime import datetime
+import atexit
+from datetime import datetime, timedelta
 from itertools import groupby
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # --- 1. IMPORTS ---
 from dotenv import load_dotenv
 from flask import Flask, render_template, url_for, session, redirect, request, jsonify, make_response
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.security import generate_password_hash, check_password_hash
+
+from api import api as fastapi_app
 
 # --- 2. LOAD SECRETS ---
 load_dotenv()
@@ -23,18 +27,22 @@ TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
 STATIC_DIR = os.path.join(BASE_DIR, 'static')
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
-app.secret_key = os.getenv('SECRET_KEY', 'default_secret_key')
 
-# Force Insecure Transport (Localhost testing)
+# Security Fix 1: Hard crash if SECRET_KEY is missing — no weak fallback allowed
+secret_key = os.getenv('SECRET_KEY')
+if not secret_key:
+    raise ValueError("❌ SECRET_KEY is not set in .env — server cannot start.")
+app.secret_key = secret_key
+
+# Force Insecure Transport for localhost OAuth testing only
 if os.getenv('OAUTHLIB_INSECURE_TRANSPORT'):
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = os.getenv('OAUTHLIB_INSECURE_TRANSPORT')
 
 # --- 4. DATABASE CONNECTION ---
 def get_db_connection():
     return mysql.connector.connect(
-        # These names must match the "Keys" you enter in Render's dashboard
         host=os.getenv('DB_HOST'),
-        port=os.getenv('DB_PORT'),
+        port=os.getenv('DB_PORT', 3306),
         user=os.getenv('DB_USER'),
         password=os.getenv('DB_PASSWORD'),
         database=os.getenv('DB_NAME')
@@ -47,7 +55,6 @@ GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configura
 client = WebApplicationClient(GOOGLE_CLIENT_ID)
 
 # --- 6. EMAIL SETUP (BREVO API) ---
-# We use this helper instead of flask-mail to bypass blocked ports on free hosting
 def send_email_http(to_email, subject, body):
     url = "https://api.brevo.com/v3/smtp/email"
     
@@ -66,7 +73,6 @@ def send_email_http(to_email, subject, body):
     
     try:
         response = requests.post(url, headers=headers, data=payload)
-        # Check if status code is 201 (Created) or 200 (OK)
         return response.status_code in [200, 201]
     except Exception as e:
         print(f"Email Error: {e}", file=sys.stderr)
@@ -83,46 +89,74 @@ def find_user_by_email(email):
     return user
 
 def get_analytics(client_id, target_date=None):
-    if not target_date: target_date = datetime.now().strftime("%Y-%m")
+    if not target_date:
+        target_date = datetime.now().strftime("%Y-%m")
     
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    
-    query = "SELECT * FROM entries WHERE client_id = %s AND date LIKE %s"
-    cursor.execute(query, (client_id, f"{target_date}%"))
+    cursor.execute(
+        "SELECT * FROM entries WHERE client_id = %s AND date LIKE %s",
+        (client_id, f"{target_date}%")
+    )
     expenses = cursor.fetchall()
-    
     cursor.close()
     conn.close()
 
     total_spent = 0
-    chart_data = {'food':0, 'travel':0, 'books':0, 'fun':0, 'other':0}
+    chart_data = {'food': 0, 'travel': 0, 'books': 0, 'fun': 0, 'other': 0}
 
     for row in expenses:
         amt = float(row['amount'])
         total_spent += amt
         cat = row['category'].lower()
-        if cat in chart_data: chart_data[cat] += amt
-        else: chart_data['other'] += amt
+        if cat in chart_data:
+            chart_data[cat] += amt
+        else:
+            chart_data['other'] += amt
             
     return expenses, total_spent, list(chart_data.values())
 
 # --- 8. ROUTES ---
 
 @app.route('/')
-def home(): return render_template('login.html')
+def home():
+    return render_template('login.html')
 
-# --- OTP & REGISTER ---
+# =========================================
+# OTP & REGISTER
+# =========================================
+
+# Security Fix 2: In-memory OTP rate limiter
+# Stores { email: (attempt_count, first_attempt_datetime) }
+otp_rate_limit = {}
+
 @app.route('/send_otp', methods=['POST'])
 def send_otp():
     email = request.form.get('email')
-    if find_user_by_email(email): return "⚠️ Account exists! Please Log In."
+
+    # Rate limit: max 3 OTP requests per email per 10 minutes
+    now = datetime.now()
+    if email in otp_rate_limit:
+        attempts, first_attempt = otp_rate_limit[email]
+        if now - first_attempt < timedelta(minutes=10):
+            if attempts >= 3:
+                return "⚠️ Too many OTP requests. Please wait 10 minutes and try again."
+            # Still within window, increment attempt count
+            otp_rate_limit[email] = (attempts + 1, first_attempt)
+        else:
+            # Window expired, reset counter
+            otp_rate_limit[email] = (1, now)
+    else:
+        # First attempt for this email
+        otp_rate_limit[email] = (1, now)
+
+    if find_user_by_email(email):
+        return "⚠️ Account exists! Please Log In."
     
     otp = str(random.randint(100000, 999999))
     session['temp_otp'] = otp
     session['temp_email'] = email
     
-    # SEND EMAIL VIA BREVO API
     success = send_email_http(
         to_email=email, 
         subject="BudgetBuddy Verification Code", 
@@ -143,7 +177,8 @@ def verify_otp():
 @app.route('/save_profile', methods=['POST'])
 def save_profile():
     email = request.form.get('email')
-    if find_user_by_email(email): return redirect(url_for('home'))
+    if find_user_by_email(email):
+        return redirect(url_for('home'))
     
     name = request.form.get('name')
     password = request.form.get('password')
@@ -157,7 +192,6 @@ def save_profile():
         (name, email, pic, hashed_pw, 15000)
     )
     conn.commit()
-    
     client_id = cursor.lastrowid
     cursor.close()
     conn.close()
@@ -172,47 +206,53 @@ def login_password():
     input_pass = request.form.get('password').strip()
     
     if user and check_password_hash(user['password'], input_pass):
-        session['user'] = {'name': user['name'], 'email': user['email'], 'given_name': user['name'].split()[0], 'picture': user['profile_pic']}
+        session['user'] = {
+            'name': user['name'],
+            'email': user['email'],
+            'given_name': user['name'].split()[0],
+            'picture': user['profile_pic']
+        }
         session['client_id'] = user['client_id']
         return redirect(url_for('dashboard'))
     return "❌ Login Failed!"
 
-# --- GOOGLE LOGIN ROUTES ---
+# =========================================
+# GOOGLE LOGIN
+# =========================================
+
 @app.route("/login/google")
 def login_google():
     google_provider_cfg = requests.get(GOOGLE_DISCOVERY_URL).json()
-    
-    # Dynamically build the redirect URI based on the current request
-    # This automatically handles localhost (HTTP) and Render (HTTPS)
-    redirect_uri = url_for('callback', _external=True)
-    
-    # Force HTTPS if we are not on localhost (required for Render/Google)
-    if "localhost" not in redirect_uri and "127.0.0.1" not in redirect_uri:
-        redirect_uri = redirect_uri.replace("http://", "https://")
-
+    base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5000')
+    redirect_uri = f"{base_url}/authorize/google"
     request_uri = client.prepare_request_uri(
         google_provider_cfg["authorization_endpoint"],
         redirect_uri=redirect_uri,
         scope=["openid", "email", "profile"],
     )
     return redirect(request_uri)
+
 @app.route("/authorize/google")
 def callback():
     code = request.args.get("code")
     google_provider_cfg = requests.get(GOOGLE_DISCOVERY_URL).json()
-    
-    # Force HTTPS for Render to prevent redirect_uri_mismatch
-    authorization_response = request.url.replace("http://", "https://")
-    redirect_url = request.base_url.replace("http://", "https://")
+    base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5000')
+    redirect_uri = f"{base_url}/authorize/google"
     
     token_url, headers, body = client.prepare_token_request(
         google_provider_cfg["token_endpoint"],
-        authorization_response=authorization_response,
-        redirect_url=redirect_url,
+        authorization_response=request.url,
+        redirect_url=redirect_uri,
         code=code
     )
-    
-    token_res = requests.post(token_url, headers=headers, data=body, auth=(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET))
+    token_res = requests.post(
+        token_url, headers=headers, data=body,
+        auth=(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
+    )
+
+    # Security Fix 3: Removed debug print that was leaking OAuth tokens to server logs
+    # print("\n🚨 GOOGLE RESPONSE:", token_res.json(), "\n")  ← REMOVED
+
     client.parse_request_body_response(json.dumps(token_res.json()))
     
     uri, headers, body = client.add_token(google_provider_cfg["userinfo_endpoint"])
@@ -223,28 +263,34 @@ def callback():
 
     if not user:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True) # dictionary=True makes it easier to access columns
+        cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO clients (google_id, name, email, profile_pic, password, budget) VALUES (%s, %s, %s, %s, %s, %s)",
-            (userinfo_res.get("sub"), userinfo_res.get("name"), email, userinfo_res.get("picture"), "google_auth", 15000)
+            (userinfo_res.get("sub"), userinfo_res.get("name"), email,
+             userinfo_res.get("picture"), "google_auth", 15000)
         )
         conn.commit()
+        user = find_user_by_email(email)
         cursor.close()
         conn.close()
-        user = find_user_by_email(email)
 
     session['user'] = {
-        'name': user['name'], 
-        'email': user['email'], 
-        'given_name': user['name'].split()[0], 
+        'name': user['name'],
+        'email': user['email'],
+        'given_name': user['name'].split()[0],
         'picture': user['profile_pic']
     }
     session['client_id'] = user['client_id']
     return redirect(url_for('dashboard'))
-# --- MAIN APP ROUTES ---
+
+# =========================================
+# MAIN APP ROUTES
+# =========================================
+
 @app.route('/dashboard')
 def dashboard():
-    if 'client_id' not in session: return redirect(url_for('home'))
+    if 'client_id' not in session:
+        return redirect(url_for('home'))
     cid = session['client_id']
     
     _, m_spent, m_chart = get_analytics(cid, datetime.now().strftime("%Y-%m"))
@@ -257,18 +303,24 @@ def dashboard():
     days_left = days_in_month - datetime.now().day + 1
     
     data = {
-        "budget": int(budget), "balance": int(budget - m_spent), 
-        "daily_limit": int((budget - m_spent)/days_left) if days_left > 0 else 0, 
-        "spent_today": int(d_spent), "currency": "₹", "chart_data": m_chart
+        "budget": int(budget),
+        "balance": int(budget - m_spent),
+        "daily_limit": int((budget - m_spent) / days_left) if days_left > 0 else 0,
+        "spent_today": int(d_spent),
+        "currency": "₹",
+        "chart_data": m_chart
     }
     
-    response = make_response(render_template('dashboard.html', user=session['user'], data=data, transactions=expenses))
+    response = make_response(render_template(
+        'dashboard.html', user=session['user'], data=data, transactions=expenses
+    ))
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
 
 @app.route('/reports')
 def reports():
-    if 'client_id' not in session: return redirect(url_for('home'))
+    if 'client_id' not in session:
+        return redirect(url_for('home'))
     selected_month = request.args.get('month') or datetime.now().strftime("%Y-%m")
     
     expenses, total_spent, _ = get_analytics(session['client_id'], selected_month)
@@ -279,12 +331,16 @@ def reports():
     for row in expenses:
         cat = row['category'].strip().capitalize()
         amt = float(row['amount'])
-        if cat in chart_totals: chart_totals[cat] += amt
-        else: chart_totals['Other'] += amt
+        if cat in chart_totals:
+            chart_totals[cat] += amt
+        else:
+            chart_totals['Other'] += amt
 
     now = datetime.now()
-    if selected_month == now.strftime("%Y-%m"): days_passed = now.day
-    else: days_passed = calendar.monthrange(int(selected_month[:4]), int(selected_month[5:]))[1]
+    if selected_month == now.strftime("%Y-%m"):
+        days_passed = now.day
+    else:
+        days_passed = calendar.monthrange(int(selected_month[:4]), int(selected_month[5:]))[1]
     
     average_spent = int(total_spent / days_passed) if days_passed > 0 else 0
 
@@ -294,22 +350,33 @@ def reports():
         daily_grouped.append((date, list(items)))
 
     r = {
-        'selected_month': selected_month, 'total': int(total_spent),
-        'average': average_spent, 'categories': categories,
-        'cat_values': list(chart_totals.values()), 'daily_grouped': daily_grouped
+        'selected_month': selected_month,
+        'total': int(total_spent),
+        'average': average_spent,
+        'categories': categories,
+        'cat_values': list(chart_totals.values()),
+        'daily_grouped': daily_grouped
     }
     return render_template('reports.html', user=session['user'], r=r)
 
+@app.route('/goals')
+def goals():
+    if 'client_id' not in session:
+        return redirect(url_for('home'))
+    return render_template('goals.html', user=session['user'])
+
+# These Flask routes are kept as fallback — primary data ops use FastAPI endpoints
 @app.route('/add_expense', methods=['POST'])
 def add_expense():
-    if 'client_id' not in session: return redirect(url_for('home'))
+    if 'client_id' not in session:
+        return redirect(url_for('home'))
     date = request.form.get('date') or datetime.now().strftime("%Y-%m-%d")
-    
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO entries (client_id, amount, category, description, date) VALUES (%s, %s, %s, %s, %s)",
-        (session['client_id'], request.form.get('amount'), request.form.get('category'), request.form.get('description'), date)
+        (session['client_id'], request.form.get('amount'),
+         request.form.get('category'), request.form.get('description'), date)
     )
     conn.commit()
     cursor.close()
@@ -318,34 +385,36 @@ def add_expense():
 
 @app.route('/edit_transaction', methods=['POST'])
 def edit_transaction():
-    if 'client_id' not in session: return redirect(url_for('home'))
-    
+    if 'client_id' not in session:
+        return redirect(url_for('home'))
     t_id = request.form.get('id')
     desc = request.form.get('description')
     amt = request.form.get('amount')
-    
     conn = get_db_connection()
     cursor = conn.cursor()
-    
     try:
-        cursor.execute("UPDATE entries SET description = %s, amount = %s WHERE entry_id = %s AND client_id = %s", 
-                       (desc, amt, t_id, session['client_id']))
+        cursor.execute(
+            "UPDATE entries SET description = %s, amount = %s WHERE entry_id = %s AND client_id = %s",
+            (desc, amt, t_id, session['client_id'])
+        )
         conn.commit()
     except mysql.connector.Error as err:
-        print("Error: ", err)
+        print("DB Error:", err, file=sys.stderr)
     finally:
         cursor.close()
         conn.close()
-        
     return redirect(url_for('dashboard'))
 
 @app.route('/update_budget', methods=['POST'])
 def update_budget():
-    if 'client_id' not in session: return redirect(url_for('home'))
-    
+    if 'client_id' not in session:
+        return redirect(url_for('home'))
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE clients SET budget = %s WHERE client_id = %s", (request.form.get('budget'), session['client_id']))
+    cursor.execute(
+        "UPDATE clients SET budget = %s WHERE client_id = %s",
+        (request.form.get('budget'), session['client_id'])
+    )
     conn.commit()
     cursor.close()
     conn.close()
@@ -353,120 +422,108 @@ def update_budget():
 
 @app.route('/update_budget_incremental', methods=['POST'])
 def update_budget_incremental():
-    if 'client_id' not in session: return redirect(url_for('home'))
-    
+    if 'client_id' not in session:
+        return redirect(url_for('home'))
     action = request.form.get('action')
     try:
         amount = float(request.form.get('amount'))
     except:
         return redirect(url_for('dashboard'))
-        
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    
     cursor.execute("SELECT budget FROM clients WHERE client_id = %s", (session['client_id'],))
     result = cursor.fetchone()
     current_budget = float(result['budget']) if result else 0
-    
     if action == 'add':
         new_budget = current_budget + amount
     elif action == 'sub':
         new_budget = current_budget - amount
     else:
         new_budget = current_budget
-        
-    cursor.execute("UPDATE clients SET budget = %s WHERE client_id = %s", (new_budget, session['client_id']))
+    cursor.execute(
+        "UPDATE clients SET budget = %s WHERE client_id = %s",
+        (new_budget, session['client_id'])
+    )
     conn.commit()
     cursor.close()
     conn.close()
-    
     return redirect(url_for('dashboard'))
 
-# --- SETTINGS ROUTES ---
+# =========================================
+# SETTINGS
+# =========================================
 
 @app.route('/settings')
 def settings():
     if 'client_id' not in session:
-        return redirect(url_for('home')) 
-    
+        return redirect(url_for('home'))
     user_db = find_user_by_email(session['user']['email'])
-    
     if not user_db:
         return redirect(url_for('home'))
-
     is_google_user = (user_db['password'] == 'google_auth')
-    
     session['user']['name'] = user_db['name']
     session['user']['picture'] = user_db['profile_pic']
-
     return render_template('settings.html', user=session['user'], is_google_user=is_google_user)
 
 @app.route('/update_settings', methods=['POST'])
 def update_settings():
-    if 'client_id' not in session: return redirect(url_for('home'))
-    
+    if 'client_id' not in session:
+        return redirect(url_for('home'))
     new_name = request.form.get('name')
     new_pic = request.form.get('profile_pic')
     new_pass = request.form.get('password')
     client_id = session['client_id']
-    
     conn = get_db_connection()
     cursor = conn.cursor()
-    
     if new_pass and new_pass.strip():
         hashed_pw = generate_password_hash(new_pass)
-        cursor.execute("UPDATE clients SET name = %s, profile_pic = %s, password = %s WHERE client_id = %s", 
-                       (new_name, new_pic, hashed_pw, client_id))
+        cursor.execute(
+            "UPDATE clients SET name = %s, profile_pic = %s, password = %s WHERE client_id = %s",
+            (new_name, new_pic, hashed_pw, client_id)
+        )
     else:
-        cursor.execute("UPDATE clients SET name = %s, profile_pic = %s WHERE client_id = %s", 
-                       (new_name, new_pic, client_id))
-        
+        cursor.execute(
+            "UPDATE clients SET name = %s, profile_pic = %s WHERE client_id = %s",
+            (new_name, new_pic, client_id)
+        )
     conn.commit()
     cursor.close()
     conn.close()
-    
     session['user']['name'] = new_name
     session['user']['given_name'] = new_name.split()[0]
     session['user']['picture'] = new_pic
     session.modified = True
-    
     return redirect(url_for('dashboard'))
 
 @app.route('/change_password', methods=['POST'])
 def change_password():
     if 'client_id' not in session:
         return jsonify({'success': False, 'message': 'Session expired. Please login again.'})
-
     data = request.get_json()
     old_pass = data.get('old_password')
     new_pass = data.get('new_password')
     client_id = session['client_id']
-
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT * FROM clients WHERE client_id = %s", (client_id,))
     user = cursor.fetchone()
-
-    # 1. VERIFY OLD PASSWORD
     if not check_password_hash(user['password'], old_pass):
         cursor.close()
         conn.close()
         return jsonify({'success': False, 'message': '❌ Incorrect Old Password! Please try again.'})
-
-    # 2. UPDATE NEW PASSWORD
     hashed_pw = generate_password_hash(new_pass)
-    cursor.execute("UPDATE clients SET password = %s WHERE client_id = %s", (hashed_pw, client_id))
+    cursor.execute(
+        "UPDATE clients SET password = %s WHERE client_id = %s",
+        (hashed_pw, client_id)
+    )
     conn.commit()
     cursor.close()
     conn.close()
-
-    # 3. SEND EMAIL NOTIFICATION (VIA BREVO)
     send_email_http(
-        to_email=user['email'], 
-        subject="Security Alert: Password Changed", 
-        body=f"Hello {user['name']},\n\nYour BudgetBuddy password was successfully changed just now.\n\nIf this wasn't you, please contact support."
+        to_email=user['email'],
+        subject="Security Alert: Password Changed",
+        body=f"Hello {user['name']},\n\nYour BudgetBuddy password was successfully changed.\n\nIf this wasn't you, please contact support immediately."
     )
-
     return jsonify({'success': True, 'message': '✅ Password Changed Successfully!'})
 
 @app.route('/logout')
@@ -476,12 +533,77 @@ def logout():
 
 @app.route('/api/chart-data')
 def chart_data_api():
-    if 'client_id' not in session: return jsonify({'chart': []})
+    if 'client_id' not in session:
+        return jsonify({'chart': []})
     date = request.args.get('date')
     _, _, chart = get_analytics(session['client_id'], date)
     return jsonify({'chart': chart})
 
+# =========================================
+# BACKGROUND SCHEDULER — RECURRING EXPENSES
+# =========================================
+
+def process_recurring_expenses():
+    print("⏳ Running daily recurring expenses check...", file=sys.stderr)
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    today = datetime.now()
+    current_day = today.day
+    current_month = today.strftime("%Y-%m")
+
+    # Find all recurring template entries that should fire today
+    cursor.execute(
+        "SELECT * FROM entries WHERE is_recurring = 1 AND recurring_day = %s",
+        (current_day,)
+    )
+    recurring_templates = cursor.fetchall()
+
+    for template in recurring_templates:
+        # Prevent double-charging: check if already inserted this month
+        check_query = """
+            SELECT entry_id FROM entries 
+            WHERE client_id = %s AND description = %s AND amount = %s 
+            AND date LIKE %s AND entry_id != %s
+        """
+        cursor.execute(check_query, (
+            template['client_id'], template['description'],
+            template['amount'], f"{current_month}%", template['entry_id']
+        ))
+        already_paid = cursor.fetchone()
+
+        # Prevent Day 1 bug: don't fire if template was just created today
+        created_today = (str(template['date']) == today.strftime("%Y-%m-%d"))
+
+        if not already_paid and not created_today:
+            cursor.execute(
+                """INSERT INTO entries 
+                   (client_id, amount, category, description, date, is_recurring, recurring_day)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (template['client_id'], template['amount'], template['category'],
+                 template['description'], today.strftime("%Y-%m-%d"), 0, None)
+            )
+            print(f"✅ Auto-inserted: {template['description']} — ₹{template['amount']}", file=sys.stderr)
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+# Start scheduler — runs daily at 00:01
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=process_recurring_expenses, trigger="cron", hour=0, minute=1)
+scheduler.start()
+
+# Safely shut down scheduler when app stops
+atexit.register(lambda: scheduler.shutdown())
+
+from fastapi.middleware.wsgi import WSGIMiddleware
+import uvicorn
+
+# Mount Flask inside FastAPI
+fastapi_app.mount("/", WSGIMiddleware(app))
+
 if __name__ == '__main__':
-
-    app.run(port=5000, debug=True)
-
+    # Run recurring check on boot in case server was down at midnight
+    process_recurring_expenses()
+    uvicorn.run("app:fastapi_app", host="0.0.0.0", port=5000, reload=True)
