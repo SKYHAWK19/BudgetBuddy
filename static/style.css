@@ -105,7 +105,7 @@ body {
 }
 
 .float-btn {
-    width: 130px;           
+    width: 130px;          
     padding: 15px 0;
     border-radius: 50px;
     font-size: 1.1rem;
@@ -275,7 +275,7 @@ body.dark-mode .card { border: 1px solid rgba(255,255,255,0.1); }
 body.dark-mode .chart-card-wide { border: 1px solid rgba(255,255,255,0.1); }
 
 /* =========================================
-   6. MODALS
+   6. MODALS & FORMS
    ========================================= */
 .modal-overlay {
     position: fixed;
@@ -316,8 +316,63 @@ body.dark-mode .login-card input { border: 1px solid #333; }
     font-weight: bold; margin-top: 10px;
 }
 
+/* --- PREMIUM CUSTOM CHECKBOX --- */
+.custom-checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: var(--text-color);
+    margin-bottom: 15px;
+    margin-top: 10px;
+    user-select: none; /* Prevents text highlighting when clicking rapidly */
+}
+
+/* 1. Hide the boring default checkbox entirely */
+.custom-checkbox-wrapper input[type="checkbox"] {
+    display: none; 
+}
+
+/* 2. Create our own sleek box */
+.custom-checkmark {
+    width: 22px;
+    height: 22px;
+    border: 2px solid rgba(150, 150, 150, 0.5);
+    border-radius: 6px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.2s ease-in-out;
+    background-color: transparent;
+}
+
+/* 3. The hidden checkmark icon */
+.custom-checkmark::after {
+    content: "✔";
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+    opacity: 0;
+    transform: scale(0);
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* 4. What happens when you check the box */
+.custom-checkbox-wrapper input[type="checkbox"]:checked + .custom-checkmark {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 12px rgba(0, 184, 148, 0.4); /* Soft glow */
+}
+
+/* 5. Pop in the checkmark */
+.custom-checkbox-wrapper input[type="checkbox"]:checked + .custom-checkmark::after {
+    opacity: 1;
+    transform: scale(1);
+}
+
 /* =========================================
-   7. FIXED THEME TOGGLE (THE FIX)
+   7. FIXED THEME TOGGLE
    ========================================= */
 .theme-toggle {
     position: fixed; /* Fixed to viewport */
@@ -335,25 +390,6 @@ body.dark-mode .login-card input { border: 1px solid #333; }
     background: none; border: none; font-size: 1.2rem; cursor: pointer;
 }
 
-/* Mobile Responsive Tweaks */
-@media (max-width: 768px) {
-    .sidebar { width: 85%; max-width: 300px; }
-    .hero-text h1 { font-size: 2.5rem; }
-    .action-buttons { bottom: 20px; right: 20px; }
-    .top-navbar { padding: 0 15px; }
-    .profile-info { display: none; }
-    #closeSidebarBtn { display: block !important; }
-}
-/* Add this to the bottom of style.css */
-
-/* Special layout for Login, OTP, and Setup pages */
-body.centered-layout {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    width: 100vw;
-}
 /* =========================================
    8. CENTERED LAYOUT (For Login/OTP/Setup)
    ========================================= */
@@ -362,13 +398,18 @@ body.centered-layout {
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    width: 100%;
+    width: 100vw;
 }
+
 /* =========================================
-   8. RESPONSIVE FIXES (Navbar & Layout)
+   9. RESPONSIVE FIXES (Navbar & Layout)
    ========================================= */
 @media (max-width: 768px) {
-    /* 1. Navbar: Make it fit! */
+    .sidebar { width: 85%; max-width: 300px; }
+    .hero-text h1 { font-size: 2.5rem; }
+    .action-buttons { bottom: 20px; right: 20px; }
+    
+    /* Navbar tweaks */
     .top-navbar {
         padding: 0 10px;
         gap: 10px;
@@ -376,21 +417,22 @@ body.centered-layout {
     }
 
     .top-navbar h2 {
-        font-size: 1.2rem; /* Smaller Title */
-        margin-right: auto; /* Push controls to right */
+        font-size: 1.2rem; 
+        margin-right: auto; 
     }
 
     /* Hide Profile Name on Mobile */
     .profile-info { display: none; }
+    #closeSidebarBtn { display: block !important; }
 
-    /* 2. Location Dropdown: Shrink it */
+    /* Location Dropdown: Shrink it */
     .location-select {
-        width: 120px; /* Force smaller width */
+        width: 120px; 
         font-size: 0.8rem;
         padding: 5px;
     }
 
-    /* 3. Cards & Charts Stack */
+    /* Cards & Charts Stack */
     .bottom-section {
         display: flex !important;
         flex-direction: column;
@@ -398,13 +440,13 @@ body.centered-layout {
     }
 
     .clock-card {
-        min-height: auto !important; /* Let it shrink */
+        min-height: auto !important; 
         padding: 15px;
     }
     
-    .clock-time { font-size: 2rem !important; } /* Smaller Clock */
+    .clock-time { font-size: 2rem !important; } 
     
-    /* 4. Chart Controls Stack */
+    /* Chart Controls Stack */
     .chart-controls {
         flex-direction: column;
         gap: 10px;
@@ -412,4 +454,65 @@ body.centered-layout {
     }
     .toggle-group { width: 100%; justify-content: center; }
     .date-input { width: 100%; }
+}
+/* =========================================
+   GOALS PAGE STYLES & RESPONSIVENESS
+   ========================================= */
+.goals-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 1.5rem; }
+.goal-card { background: var(--card-bg); border-radius: 16px; padding: 24px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 14px; transition: transform 0.2s ease; position: relative; overflow: hidden; }
+.goal-card:hover { transform: translateY(-4px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
+body.dark-mode .goal-card { border: 1px solid rgba(255,255,255,0.07); }
+.goal-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, var(--accent-color), #a29bfe); border-radius: 16px 16px 0 0; }
+.goal-card-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.goal-name { font-size: 1.1rem; font-weight: 700; color: var(--text-color); }
+.goal-delete-btn { background: none; border: none; cursor: pointer; color: var(--danger); opacity: 0.5; transition: opacity 0.2s; padding: 0; }
+.goal-delete-btn:hover { opacity: 1; }
+.goal-donut-wrapper { display: flex; align-items: center; gap: 20px; }
+.goal-donut-container { position: relative; width: 90px; height: 90px; flex-shrink: 0; }
+.goal-donut-label { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.95rem; font-weight: 800; color: var(--accent-color); pointer-events: none; }
+.goal-amounts { display: flex; flex-direction: column; gap: 4px; }
+.goal-saved { font-size: 1.4rem; font-weight: 800; color: var(--accent-color); }
+.goal-target { font-size: 0.85rem; opacity: 0.6; color: var(--text-color); }
+.goal-deadline { font-size: 0.8rem; opacity: 0.55; display: flex; align-items: center; gap: 4px; color: var(--text-color); }
+.goal-add-row { display: flex; gap: 8px; margin-top: 4px; }
+.goal-add-input { flex: 1; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.15); background: var(--bg-color); color: var(--text-color); font-size: 0.9rem; }
+body.dark-mode .goal-add-input { border-color: rgba(255,255,255,0.15); }
+.goal-add-btn { background: linear-gradient(135deg, var(--accent-color), #00b894); color: white; border: none; padding: 8px 14px; border-radius: 8px; font-size: 0.85rem; font-weight: bold; cursor: pointer; }
+.goal-card.completed::before { background: linear-gradient(90deg, #00b894, #55efc4); }
+.goal-completed-badge { display: inline-block; background: rgba(0,184,148,0.15); color: #00b894; border: 1px solid rgba(0,184,148,0.3); padding: 3px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 700; }
+.add-goal-btn { background: linear-gradient(135deg, var(--accent-color), #00b894); color: white; border: none; padding: 12px 24px; border-radius: 30px; font-size: 1rem; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.goals-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 2rem; }
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) { 
+    .goals-summary { grid-template-columns: 1fr; } 
+    .goals-grid { grid-template-columns: 1fr; } 
+}
+/* --- GRADIENT ACTION BUTTONS --- */
+.gradient-btn {
+    background: linear-gradient(135deg, var(--accent-color), #00b894);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 30px; 
+    font-size: 0.95rem;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0, 184, 148, 0.3); 
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gradient-btn:hover {
+    transform: translateY(-3px) scale(1.05);
+    /* Double shadow: One for the purple side, one for the teal side! */
+    box-shadow: 
+        -5px 8px 20px rgba(108, 92, 231, 0.5), 
+         5px 8px 25px rgba(0, 184, 148, 0.5);
+}
+
+.gradient-btn:active {
+    transform: translateY(1px);
 }
