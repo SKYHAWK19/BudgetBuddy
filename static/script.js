@@ -302,3 +302,33 @@ if (confirmDeleteBtn) {
         }
     });
 }
+// 6. QUICK ADD EXPENSE
+window.addQuickExpense = async function(amount, category, description) {
+    const data = {
+        amount: parseFloat(amount),
+        category: category,
+        description: description,
+        date: new Date().toISOString().split('T')[0], // Automatically grabs today's date
+        is_recurring: false,
+        recurring_day: null
+    };
+
+    try {
+        const response = await fetch('/api/v1/expenses', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Client-ID': CLIENT_ID
+            },
+            body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+            window.location.reload(); // Instantly updates your Dashboard math!
+        } else {
+            alert("Error adding quick expense.");
+        }
+    } catch (error) { 
+        console.error("Network error:", error); 
+    }
+};
