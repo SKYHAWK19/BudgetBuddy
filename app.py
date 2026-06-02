@@ -103,7 +103,8 @@ def get_analytics(client_id, target_date=None):
     conn.close()
 
     total_spent = 0
-    chart_data = {'food': 0, 'travel': 0, 'books': 0, 'fun': 0, 'other': 0}
+    # FIX: Added 'savings' to keep the array length matched with Chart.js
+    chart_data = {'food': 0, 'travel': 0, 'books': 0, 'fun': 0, 'savings': 0, 'other': 0}
 
     for row in expenses:
         amt = float(row['amount'])
@@ -343,7 +344,8 @@ def reports():
     
     expenses, total_spent, _ = get_analytics(session['client_id'], selected_month)
     
-    categories = ['Food', 'Travel', 'Fun', 'Books', 'Other']
+    # FIX: Updated to include 'Savings' in the exact same order as JS expects
+    categories = ['Food', 'Travel', 'Books', 'Fun', 'Savings', 'Other']
     chart_totals = {cat: 0 for cat in categories}
 
     for row in expenses:
