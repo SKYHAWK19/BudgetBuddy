@@ -110,6 +110,33 @@
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(108, 92, 231, 0.6);
         }
+
+        /* --- QUICK ADD BUTTONS --- */
+        .quick-add-btn {
+            background: var(--card-bg);
+            border: 1px solid rgba(108, 92, 231, 0.4);
+            color: var(--text-color);
+            padding: 10px 18px;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .quick-add-btn:hover {
+            background: linear-gradient(135deg, var(--accent-color), #00b894);
+            color: white;
+            transform: translateY(-3px);
+            border-color: transparent;
+            box-shadow: 0 6px 15px rgba(0, 184, 148, 0.3);
+        }
+
+        .quick-add-btn:active {
+            transform: translateY(1px);
+        }
     </style>
 </head>
 <body>
@@ -146,7 +173,6 @@
                         <i class="material-icons-sharp">logout</i> Logout
                     </a>
                 </li>
-                
             </ul>
         </aside>
 
@@ -168,6 +194,8 @@
                     <button class="theme-toggle-dash" id="themeBtn">🌙</button>
                 </div>
             </div>
+
+            <div id="budgetAlertBanner"></div>
 
             <div class="cards-grid">
                 
@@ -195,8 +223,16 @@
                 </div>
                 <div class="card">
                     <h3>Safe Daily Limit</h3>
-                    <div class="amount">{{ data.currency }}{{ data.daily_limit }}</div>
-                    <small class="text-muted">To last until month end</small>
+                    <div class="amount" {% if data.limit_status == 'Exceeded' %}style="color: var(--danger);"{% endif %}>
+                        {{ data.currency }}{{ data.daily_limit }}
+                    </div>
+                    <small class="text-muted">
+                        {% if data.limit_status == 'Safe' %}
+                            You can still spend <b style="color:var(--accent-color)">{{ data.currency }}{{ data.safe_remaining }}</b> today
+                        {% else %}
+                            <b style="color:var(--danger)">Limit Exceeded! New average set.</b>
+                        {% endif %}
+                    </small>
                 </div>
                 <div class="card">
                     <h3>Spent Today</h3>
@@ -204,7 +240,25 @@
                 </div>
             </div>
 
-            <div class="recent-orders" style="margin-top: 2rem;">
+            <div style="margin-top: 1.5rem; margin-bottom: 0.5rem;">
+                <h3 style="font-size: 1rem; margin-bottom: 12px; color: var(--text-color); opacity: 0.8;">⚡ Quick Add</h3>
+                <div style="display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px;">
+                    <button class="quick-add-btn" onclick="addQuickExpense(100, 'Food', 'Quick Meal')">
+                        🍔 Food ₹100
+                    </button>
+                    <button class="quick-add-btn" onclick="addQuickExpense(20, 'Travel', 'Bus Fare')">
+                        🚌 Bus ₹20
+                    </button>
+                    <button class="quick-add-btn" onclick="addQuickExpense(150, 'Food', 'Coffee')">
+                        ☕ Coffee ₹150
+                    </button>
+                    <button class="quick-add-btn" onclick="addQuickExpense(500, 'Fun', 'Movie/Outing')">
+                        🍿 Fun ₹500
+                    </button>
+                </div>
+            </div>
+
+            <div class="recent-orders" style="margin-top: 1rem;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
                     <h2>Recent Activity</h2>
                     <button class="add-money-btn" onclick="openModal()">
@@ -357,7 +411,6 @@
             
             <input type="hidden" id="delete_expense_id">
             
-            <!-- THIS BOX ONLY SHOWS IF IT IS A TEMPLATE -->
             <div id="smart-ask-box" style="background: rgba(0,0,0,0.05); padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: left; display: none;">
                 <p style="margin-bottom: 10px; font-weight: bold; color: var(--text-color);">How should we handle this?</p>
                 <label style="display: block; margin-bottom: 8px; cursor: pointer; color: var(--text-color);">
@@ -370,7 +423,6 @@
                 </label>
             </div>
 
-            <!-- THIS TEXT SHOWS FOR NORMAL EXPENSES -->
             <p id="normal-delete-text" style="margin-bottom: 20px; color: var(--text-color);">
                 Are you sure you want to delete this expense?
             </p>
@@ -388,6 +440,46 @@
     <script src="{{ url_for('static', filename='script.js') }}"></script>
     
     <script>
+        // --- 0. BUDGET ALERT LOGIC ---
+        function checkBudgetAlerts() {
+            const monthlyBudget = parseFloat("{{ data.budget }}");
+            const currentBalance = parseFloat("{{ data.balance }}");
+            const currency = "{{ data.currency }}";
+            
+            // Calculate how much has been spent total
+            const totalSpent = monthlyBudget - currentBalance;
+            
+            if (monthlyBudget > 0) {
+                const spentPercent = (totalSpent / monthlyBudget) * 100;
+                let alertMsg = "";
+                let alertClass = "";
+
+                // Determine the threshold
+                if (spentPercent >= 100) {
+                    alertMsg = `🚨 Whoa! You have exceeded your monthly budget by ${currency}${Math.abs(currentBalance)}!`;
+                    alertClass = "alert-danger";
+                } else if (spentPercent >= 90) {
+                    alertMsg = `⚠️ Careful! You've spent ${Math.round(spentPercent)}% of your monthly budget.`;
+                    alertClass = "alert-warning";
+                } else if (spentPercent >= 80) {
+                    alertMsg = `👀 Heads up: You've reached ${Math.round(spentPercent)}% of your budget. Slow down!`;
+                    alertClass = "alert-info";
+                }
+
+                // If an alert was triggered, inject it into the HTML
+                if (alertMsg) {
+                    const alertDiv = document.getElementById('budgetAlertBanner');
+                    alertDiv.innerHTML = `
+                        <div class="budget-alert ${alertClass}">
+                            <span>${alertMsg}</span>
+                            <span class="material-icons-sharp" style="cursor:pointer; font-size:1.2rem;" onclick="this.parentElement.style.display='none'">close</span>
+                        </div>
+                    `;
+                }
+            }
+        }
+        checkBudgetAlerts(); // Run the check immediately on page load
+
         // --- 1. SMART CLOCK LOGIC ---
         let currentDayStr = new Date().toDateString();
 
@@ -456,10 +548,10 @@
         let myChart = new Chart(ctx, {
             type: 'doughnut',
             data: {
-                labels: ['Food', 'Travel', 'Books', 'Fun', 'Other'],
+                labels: ['Food', 'Travel', 'Books', 'Fun', 'Savings', 'Other'],
                 datasets: [{
                     data: initialData,
-                    backgroundColor: ['#ff7675', '#fdcb6e', '#0984e3', '#00b894', '#636e72'],
+                    backgroundColor: ['#ff7675', '#fdcb6e', '#0984e3', '#00b894', '#6c5ce7', '#636e72'],
                     borderWidth: 0
                 }]
             },
