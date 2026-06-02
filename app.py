@@ -251,8 +251,6 @@ def callback():
     )
 
     # Security Fix 3: Removed debug print that was leaking OAuth tokens to server logs
-    # print("\n🚨 GOOGLE RESPONSE:", token_res.json(), "\n")  ← REMOVED
-
     client.parse_request_body_response(json.dumps(token_res.json()))
     
     uri, headers, body = client.add_token(google_provider_cfg["userinfo_endpoint"])
@@ -293,22 +291,42 @@ def dashboard():
         return redirect(url_for('home'))
     cid = session['client_id']
     
-    _, m_spent, m_chart = get_analytics(cid, datetime.now().strftime("%Y-%m"))
-    expenses, d_spent, _ = get_analytics(cid, datetime.now().strftime("%Y-%m-%d"))
+    today_dt = datetime.now()
+    _, m_spent, m_chart = get_analytics(cid, today_dt.strftime("%Y-%m"))
+    expenses, d_spent, _ = get_analytics(cid, today_dt.strftime("%Y-%m-%d"))
     
     user = find_user_by_email(session['user']['email'])
     budget = float(user['budget']) if user else 15000
+    current_balance = budget - m_spent
     
-    days_in_month = calendar.monthrange(datetime.now().year, datetime.now().month)[1]
-    days_left = days_in_month - datetime.now().day + 1
+    days_in_month = calendar.monthrange(today_dt.year, today_dt.month)[1]
+    days_remaining = days_in_month - today_dt.day + 1
     
+    # Calculate what the limit was BEFORE any spending today
+    if days_remaining > 0:
+        static_limit = (current_balance + d_spent) / days_remaining
+    else:
+        static_limit = 0
+
+    # The Logic: Freeze the limit or drop it dynamically
+    if d_spent < static_limit:
+        daily_limit = round(static_limit)
+        limit_status = "Safe"
+        safe_remaining = round(static_limit - d_spent)
+    else:
+        daily_limit = round(current_balance / days_remaining) if days_remaining > 0 else 0
+        limit_status = "Exceeded"
+        safe_remaining = 0
+
     data = {
         "budget": int(budget),
-        "balance": int(budget - m_spent),
-        "daily_limit": int((budget - m_spent) / days_left) if days_left > 0 else 0,
+        "balance": int(current_balance),
+        "daily_limit": int(daily_limit),
         "spent_today": int(d_spent),
         "currency": "₹",
-        "chart_data": m_chart
+        "chart_data": m_chart,
+        "limit_status": limit_status,
+        "safe_remaining": int(safe_remaining)
     }
     
     response = make_response(render_template(
