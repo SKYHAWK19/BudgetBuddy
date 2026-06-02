@@ -516,3 +516,50 @@ body.dark-mode .goal-add-input { border-color: rgba(255,255,255,0.15); }
 .gradient-btn:active {
     transform: translateY(1px);
 }
+/* --- QUICK ADD BUTTONS --- */
+.quick-add-btn {
+    background: var(--card-bg);
+    border: 1px solid rgba(108, 92, 231, 0.4);
+    color: var(--text-color);
+    padding: 10px 18px;
+    border-radius: 30px;
+    font-size: 0.9rem;
+    font-weight: bold;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.quick-add-btn:hover {
+    background: linear-gradient(135deg, var(--accent-color), #00b894);
+    color: white;
+    transform: translateY(-3px);
+    border-color: transparent;
+    box-shadow: 0 6px 15px rgba(0, 184, 148, 0.3);
+}
+
+.quick-add-btn:active {
+    transform: translateY(1px);
+}
+/* --- BUDGET ALERTS --- */
+        .budget-alert {
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            padding: 12px 20px; 
+            border-radius: 10px; 
+            margin-top: 10px;
+            margin-bottom: 20px;
+            font-weight: bold; 
+            color: white; 
+            animation: slideDown 0.4s ease-out;
+        }
+        .alert-danger { background: linear-gradient(135deg, #ff7675, #d63031); box-shadow: 0 4px 15px rgba(214, 48, 49, 0.3); }
+        .alert-warning { background: linear-gradient(135deg, #fdcb6e, #e17055); box-shadow: 0 4px 15px rgba(225, 112, 85, 0.3); }
+        .alert-info { background: linear-gradient(135deg, #0984e3, #6c5ce7); box-shadow: 0 4px 15px rgba(9, 132, 227, 0.3); }
+        
+        @keyframes slideDown { 
+            from { opacity: 0; transform: translateY(-15px); } 
+            to { opacity: 1; transform: translateY(0); } 
+        }
